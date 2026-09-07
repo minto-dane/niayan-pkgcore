@@ -1,0 +1,11 @@
+# RPMと起動成果物を含む全体系構成
+
+`Pkg_System_Composition`は最大4096成果物の選択済み構成を検査します。通常RPMのObject_Digestは元RPMのhash、initramfsやrecoveryのような生成物は正確な署名済みimageのhashです。生成物を架空のRPMだとは扱いません。
+
+署名・payload・配布系列・承認済みsnapshot集合・publisher・信頼世代・副作用の対応契約・回復pinが必要です。複数の元repositoryを束ねる場合は、その承認集合をsnapshot digestにして、各元データとの認証された対応を保ちます。
+
+選択されたactive kernel、initramfs、service manager、C libraryの一意性を検査し、bootloaderとrecoveryを要求します。kernel moduleとinitramfsはexact kernel object+ABIへ、GPU等のuserlandはmodule側driver ABIへ結び付けます。複数のfallback kernelは別の承認済みcompositionで管理します。
+
+依存closure、ファイル所有権、migration、Secure Bootのパス、完全inventoryが未確認なら拒否します。ただしこの型にTrueを入れるだけで確認が成立するわけではありません。既存のRPM認証・検査経路と、site-specificなimage生成／署名処理が証拠を提供します。
+
+これはrepository resolver、全RPM scriptlet interpreter、rpmdb移行器ではありません。ホスト/の全面管理は引き続き未接続です。新しいRPM specでMission Coreバイナリを配布できることと、そのRPM自体をMission Coreがネイティブrpmdbの代わりに管理できることを混同しないでください。

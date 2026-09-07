@@ -1,0 +1,9 @@
+-- SPDX-License-Identifier: MIT
+project Proof is
+   for Languages use ("Ada");
+   for Source_Dirs use ("src", "vendor/resolver/src", "vendor/contracts/src");
+   for Object_Dir use "build/proof-obj";
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnat2022", "-gnata", "-gnato");
+   end Compiler;
+end Proof;

@@ -1,0 +1,57 @@
+-- SPDX-License-Identifier: MIT
+with Test_Support; use Test_Support; with MC_Types; use MC_Types;
+with MC_Backups; with Pkg_Retention_Batch; with Recovery_Fixtures;
+procedure Run_Retention_Batch_Tests with SPARK_Mode => Off is
+   use type MC_Backups.Selection;
+   P : Pkg_Retention_Batch.Policy; C, Saved : MC_Backups.Catalog;
+   Asked, Granted, Chain : MC_Backups.Selection := (others => False);
+   H : Digest; Status : Outcome;
+begin
+   Recovery_Fixtures.Make (P.Recovery,C,Status); Expect (Status = OK,"retention-fixture");
+   P.Catalog_Revision := 3; P.Reference_Revision := 9; P.Complete_Reference_Scan := True;
+   P.Writers_Quiescent := True; P.Audit_Export_Confirmed := True; P.Minimum_Age := 10;
+   P.Minimum_Restore_Points := 2; P.Recovery.Immutable_For := 0;
+   for I in 1..3 loop for J in 1..2 loop C (I).Locations (J).Immutable_Until := 1_000; end loop; end loop;
+   Saved := C; Asked (1) := True; Asked (2) := True;
+   Pkg_Retention_Batch.Plan (P,C,4,Asked,Granted,Status);
+   Expect (Status = OK and then Granted = Asked,"batch-leaves-two-tested-points");
+   Asked (3) := True; Pkg_Retention_Batch.Plan (P,C,4,Asked,Granted,Status);
+   Expect (Status = Denied and then Granted = (MC_Backups.Selection'(others => False)),"batch-not-per-item-minimum");
+   Asked (3) := False; C (1).Pinned := True;
+   Pkg_Retention_Batch.Plan (P,C,4,Asked,Granted,Status); Expect (Status = Denied,"pinned-never-pruned"); C := Saved;
+   C (4).Full := False; C (4).Parent := C (1).Manifest; C (4).From_Position := C (1).Through_Position;
+   MC_Backups.Chain (C,4,4,Chain,H,Status); C (4).Restore_Test_Chain := H;
+   Pkg_Retention_Batch.Plan (P,C,4,Asked,Granted,Status); Expect (Status = Denied,"retained-child-pins-ancestor"); C := Saved;
+   C (1).Locations (1).Immutable_Until := 1_001;
+   Pkg_Retention_Batch.Plan (P,C,4,Asked,Granted,Status); Expect (Status = Denied,"object-lock-not-bypassed"); C := Saved;
+   C (1).Authenticated := False;
+   Pkg_Retention_Batch.Plan (P,C,4,Asked,Granted,Status);
+   Expect (Status = Denied,"unsigned-delete-candidate-denied"); C := Saved;
+   C (1).Locations (1).Valid_Until := P.Recovery.Now_Upper;
+   Pkg_Retention_Batch.Plan (P,C,4,Asked,Granted,Status);
+   Expect (Status = Denied,"expired-object-lock-receipt-denied"); C := Saved;
+   C (4).Through_Position := C (3).Through_Position;
+   MC_Backups.Chain (C,4,4,Chain,H,Status); C (4).Restore_Test_Chain := H;
+   MC_Backups.Restore_Set (P.Recovery,C,4,4,Chain,Status);
+   Expect (Status = OK,"duplicate-point-is-individually-restorable");
+   Pkg_Retention_Batch.Plan (P,C,4,Asked,Granted,Status);
+   Expect (Status = Denied,"duplicate-data-position-not-two-restore-points"); C := Saved;
+   P.Minimum_Recovery_Span := 2;
+   Pkg_Retention_Batch.Plan (P,C,4,Asked,Granted,Status);
+   Expect (Status = Denied,"batch-must-preserve-recovery-time-coverage");
+   P.Minimum_Recovery_Span := 1;
+   Pkg_Retention_Batch.Plan (P,C,4,Asked,Granted,Status);
+   Expect (Status = OK,"exact-recovery-span-boundary"); P.Minimum_Recovery_Span := 0;
+   -- A later copy of the same position cannot widen the recovery time span.
+   Asked := (others => False); P.Minimum_Recovery_Span := 3;
+   C (4).Through_Position := C (1).Through_Position;
+   MC_Backups.Chain (C,4,4,Chain,H,Status); C (4).Restore_Test_Chain := H;
+   MC_Backups.Restore_Set (P.Recovery,C,4,4,Chain,Status);
+   Expect (Status = OK,"recopied-position-is-individually-restorable");
+   Pkg_Retention_Batch.Plan (P,C,4,Asked,Granted,Status);
+   Expect (Status = Denied,"recopied-position-cannot-stretch-recovery-span");
+   C := Saved; P.Minimum_Recovery_Span := 0;
+   P.Writers_Quiescent := False; Pkg_Retention_Batch.Plan (P,C,4,Asked,Granted,Status);
+   Expect (Status = Denied,"concurrent-reference-writer-denied");
+   Report;
+end Run_Retention_Batch_Tests;

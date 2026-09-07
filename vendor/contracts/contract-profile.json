@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "profile": "04d27a1c24234da0f3a894de8b770e15acde50c9883b98f9976b58886f8f5299",
+  "hash_definition": "SHA256(ASCII MISSION-CORE-SHARED-SOURCE-PROFILE-v1\\n || exact contract-profile.source.sha256)",
+  "not_a_signature": true,
+  "not_formal_proof": true,
+  "mandatory_dispatch_interlock": true,
+  "implicit_legacy_policy_fallback": false,
+  "stop_barrier_contract": "1.0",
+  "distro_foundation_contract": "1.0"
+}

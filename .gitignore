@@ -1,0 +1,6 @@
+build/
+*.o
+*.ali
+*.spark
+*.bexch
+evidence/latest-run-path.txt
