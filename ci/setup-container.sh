@@ -10,4 +10,4 @@ deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20260907T00
 deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20260907T000000Z trixie-security main
 SOURCES
 apt-get update
-apt-get install -y --no-install-recommends ca-certificates curl dbus gcc git gnat gprbuild libarchive-dev libc6-dev libcurl4-openssl-dev libsodium-dev libsystemd-dev libxml2-dev make pkg-config python3 python3-cryptography ripgrep xz-utils zstd
+apt-get install -y --no-install-recommends ca-certificates curl dbus dpkg gcc git gnat gpg gpg-agent gpgconf gpgv gprbuild libarchive-dev libc6-dev libcurl4-openssl-dev libsodium-dev libsystemd-dev libxml2-dev make pkg-config python3 python3-cryptography ripgrep xz-utils zstd
