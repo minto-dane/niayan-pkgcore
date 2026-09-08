@@ -7,6 +7,17 @@ procedure Run_Deb_Semantics_Tests is
    procedure Set (To : out MC_Text.Value; S : String) is
    begin MC_Text.Set (To, S, Status); pragma Assert (Status = OK); end Set;
 begin
+   declare
+      Shifted : constant String(7..13):="1.0~rc1";
+      Empty_Text : String(-1..-2);
+      Last_Text : constant String(Integer'Last..Integer'Last):="1";
+      Near_End : constant String(Integer'Last-4..Integer'Last-2):="1.0";
+   begin
+      pragma Assert(Valid(Shifted) and then Compare(Shifted,"1.0")=Older);
+      pragma Assert(not Valid(Empty_Text) and then not Valid(Last_Text));
+      pragma Assert(Valid(Near_End) and then Compare(Near_End,"1.0-0")=Equal);
+      pragma Assert(Valid("2147483647:1") and then Compare("2147483647:1","2147483646:9")=Newer);
+   end;
    pragma Assert (not Pkg_File_Plan.Allowed_Path ("var/lib/nia/trust/floor"));
    pragma Assert (not Pkg_File_Plan.Allowed_Path ("etc/nia/keys/release"));
    pragma Assert (Pkg_File_Plan.Allowed_Path ("usr/lib/nia/runtime"));

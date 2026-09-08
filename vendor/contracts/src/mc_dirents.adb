@@ -3,15 +3,24 @@ package body MC_Dirents with SPARK_Mode is
    use type Byte;
    function Image(N : Name) return String is (N.Data(1..N.Length));
    procedure Append_Linux64_LE (Data : Bytes; L : in out Listing; Status : out Outcome) is
-      W : Listing:=L;P : Natural:=Data'First;Len,Ending : Natural;N : Name;
+      W : Listing:=L;P : Positive;Len,Ending : Natural;N : Name;
    begin
       Status:=Corrupt;
+      if Data'Length=0 then Status:=OK;return;end if;
+      if Data'Last=Integer'Last then return;end if;
+      P:=Data'First;
       while P<=Data'Last loop
+         pragma Loop_Invariant(P in Data'First .. Data'Last+1);
+         pragma Loop_Variant(Increases=>P);
          if Data'Last-P<19 then return;end if;
          Len:=Natural(Data(P+16))+Natural(Data(P+17))*256;
          if Len<20 or else Len>Data'Last-P+1 then return;end if;
          Ending:=P+19;
-         while Ending<P+Len and then Data(Ending)/=0 loop Ending:=Ending+1;end loop;
+         while Ending<P+Len and then Data(Ending)/=0 loop
+            pragma Loop_Invariant(Ending in P+19 .. P+Len);
+            pragma Loop_Variant(Increases=>Ending);
+            Ending:=Ending+1;
+         end loop;
          if Ending=P+Len or else Ending=P+19 or else Ending-(P+19)>255 then return;end if;
          N:=(others=><>);N.Length:=Ending-(P+19);
          for J in 1..N.Length loop
@@ -31,7 +40,11 @@ package body MC_Dirents with SPARK_Mode is
    begin
       for I in 2..L.Count loop
          N:=L.Names(I);J:=I;
-         while J>1 and then Image(N)<Image(L.Names(J-1)) loop L.Names(J):=L.Names(J-1);J:=J-1;end loop;
+         while J>1 and then Image(N)<Image(L.Names(J-1)) loop
+            pragma Loop_Invariant(J in 1 .. I);
+            pragma Loop_Variant(Decreases=>J);
+            L.Names(J):=L.Names(J-1);J:=J-1;
+         end loop;
          L.Names(J):=N;
       end loop;
    end Sort;

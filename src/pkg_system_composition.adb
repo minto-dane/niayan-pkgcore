@@ -15,6 +15,10 @@ package body Pkg_System_Composition with SPARK_Mode is
          for J in 1 .. I-1 loop if C.Publishers (I) = C.Publishers (J) then return Invalid_Set; end if; end loop;
       end loop;
       for I in 1 .. C.Count loop
+         pragma Loop_Invariant(Kernel_Index in 0..I-1
+           and then Init_Count<=I-1 and then Manager_Count<=I-1
+           and then Libc_Count<=I-1 and then Loader_Count<=I-1
+           and then Recovery_Count<=I-1);
          declare A : Artifact renames C.Artifacts (I); begin
             Publisher_OK := False;
             for K in 1 .. C.Publisher_Count loop if A.Publisher = C.Publishers (K) then Publisher_OK := True; end if; end loop;

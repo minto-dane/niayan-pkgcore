@@ -24,7 +24,8 @@ private
       Offset : Natural range 0 .. Max_Literals := 0;
       Length : Natural range 0 .. Max_Variables * 2 := 0;
       Active : Boolean := False;
-   end record;
+   end record with Dynamic_Predicate =>
+     Clause_Entry.Length<=Max_Literals-Clause_Entry.Offset;
    type Entries is array (Positive range 1 .. Max_Entries) of Clause_Entry;
    type Arena is array (Positive range 1 .. Max_Literals) of Literal;
    type Database is limited record

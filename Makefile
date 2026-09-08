@@ -3,7 +3,7 @@
 SHELL := /bin/sh
 GPRBUILD ?= gprbuild
 GNATPROVE ?= gnatprove
-JOBS ?= 2
+JOBS ?= 1
 .PHONY: compile-all all build check-tools check-contract test test-build flow prove evidence qualification
 all: build
 check-tools:
@@ -17,14 +17,8 @@ test-build: check-tools check-contract
 	$(GPRBUILD) -s -j$(JOBS) -p -P tests.gpr
 test: test-build
 	./ci/test-all.sh
-flow: check-contract
-	@command -v $(GNATPROVE) >/dev/null || { echo 'GNATprove missing; proof NOT RUN' >&2; exit 78; }
-	mkdir -p build/proof-obj
-	$(GNATPROVE) -j$(JOBS) -P proof.gpr -U --mode=flow --checks-as-errors=on --warnings=error
-prove: check-contract
-	@command -v $(GNATPROVE) >/dev/null || { echo 'GNATprove missing; proof NOT RUN' >&2; exit 78; }
-	mkdir -p build/proof-obj
-	$(GNATPROVE) -j$(JOBS) -P proof.gpr -U --mode=all --level=4 --checks-as-errors=on --warnings=error --proof-warnings=on --report=statistics
+# Shared bounded proof runner, copied into each independent repository.
+include ci/proof.mk
 evidence:
 	./ci/verify.sh
 qualification:

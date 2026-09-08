@@ -21,7 +21,10 @@ package body MC_SHA256 with SPARK_Mode is
       16#90BEFFFA#,16#A4506CEB#,16#BEF9A3F7#,16#C67178F2#);
    function R (X : Word; N : Natural) return Word is
      (Interfaces.Rotate_Right (X, N));
-   procedure Compress (C : in out Context) with Global => null is
+   procedure Compress (C : in out Context) with Global => null,
+     Post => C.Total=C.Total'Old and then C.Used=C.Used'Old
+       and then C.Block_Data=C.Block_Data'Old
+   is
       W : Words (0 .. 63) := (others => 0);
       A,B,D,E,F,G,H,I : Word;
       S0,S1,T1,T2 : Word;
@@ -54,8 +57,8 @@ package body MC_SHA256 with SPARK_Mode is
    function Length (C : Context) return Wide is (C.Total);
    procedure Update (C : in out Context; Data : Bytes) is
    begin
-      for Item of Data loop
-         C.Block_Data (C.Used + 1) := Item;
+      for J in Data'Range loop
+         C.Block_Data (C.Used + 1) := Data(J);
          C.Total := C.Total + 1;
          if C.Used = 63 then
             Compress (C);
@@ -63,6 +66,7 @@ package body MC_SHA256 with SPARK_Mode is
          else
             C.Used := C.Used + 1;
          end if;
+         pragma Loop_Invariant(C.Total=C.Total'Loop_Entry+Wide(J-Data'First+1));
       end loop;
    end Update;
    function Finish (C : Context) return Digest is

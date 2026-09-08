@@ -21,7 +21,15 @@ package Pkg_Dependency with SPARK_Mode, Pure is
    type Provider_Array is array(Positive range 1..Max_Providers) of Provider;
    type Selection is array(Positive range 1..Max_Packages) of Boolean;
    procedure Parse(Text : String; E : out Expression; Status : out Outcome) with Global=>null;
-   function Well_Formed(E : Expression) return Boolean with Global=>null;
+   function Well_Formed(E : Expression) return Boolean is
+     (E.Root in 1..E.Count and then (for all I in 1..E.Count =>
+       (if E.Nodes(I).Op=Capability then
+          MC_Text.Length(E.Nodes(I).Name)>0 and then E.Nodes(I).Left=0
+          and then E.Nodes(I).Right=0 and then E.Nodes(I).Alternative=0
+        else E.Nodes(I).Left in 1..I-1 and then E.Nodes(I).Right in 1..I-1
+          and then E.Nodes(I).Alternative<I
+          and then (E.Nodes(I).Alternative=0 or else E.Nodes(I).Op in If_Op | Unless_Op))))
+     with Global=>null;
    procedure Evaluate(E : Expression; Providers : Provider_Array; Count : Natural;
       Selected : Selection; Satisfied : out Boolean; Status : out Outcome)
       with Global=>null, Pre=>Count<=Max_Providers;

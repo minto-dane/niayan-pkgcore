@@ -6,6 +6,8 @@ package body MC_Base64 with SPARK_Mode is
    begin
       while I<Data'Length loop
          pragma Loop_Variant(Increases=>I);
+         pragma Loop_Invariant(I<=Data'Length+2 and then I mod 3=0);
+         pragma Loop_Invariant(P=4*(I/3)+1);
          A:=Natural(Data(Data'First+I)); B:=0; C:=0;
          if I+1<Data'Length then B:=Natural(Data(Data'First+I+1)); end if;
          if I+2<Data'Length then C:=Natural(Data(Data'First+I+2)); end if;
@@ -16,14 +18,20 @@ package body MC_Base64 with SPARK_Mode is
       end loop; return R;
    end;
    procedure Decode(Text : String; Data : out Bytes; Used : out Natural; Status : out Outcome) is
-      Pos : Natural:=0; V : array(0..3) of Natural := (others=>0); Pads : Natural;
-      function Value(C : Character) return Natural is
+      subtype Digit is Natural range 0 .. 64;
+      Pos : Natural:=0; V : array(0..3) of Digit := (others=>0); Pads : Natural range 0 .. 4;
+      function Value(C : Character) return Digit is
       begin for I in Alphabet'Range loop if Alphabet(I)=C then return I-1; end if; end loop; return 64; end;
-      procedure Emit(N : Natural) is begin Used:=Used+1; Data(Data'First+Used-1):=Byte(N); end;
+      procedure Emit(N : Natural)
+        with Pre => Used<Data'Length and then N<=255, Post => Used=Used'Old+1
+      is begin Used:=Used+1; Data(Data'First+(Used-1)):=Byte(N); end;
    begin
       Used:=0; Data:=(others=>0); Status:=Invalid_Input;
       if Text'Length mod 4/=0 or else Text'Length>1_398_104 then return; end if;
       while Pos<Text'Length loop
+         pragma Loop_Invariant(Pos<=Text'Length and then Pos mod 4=0);
+         pragma Loop_Invariant(Used<=3*(Pos/4) and then Used<=Data'Length);
+         pragma Loop_Variant(Increases=>Pos);
          Pads:=0;
          for I in 0..3 loop
             if Text(Text'First+Pos+I)='=' then V(I):=0; Pads:=Pads+1;
@@ -31,6 +39,8 @@ package body MC_Base64 with SPARK_Mode is
                if Pads>0 then return; end if;
                V(I):=Value(Text(Text'First+Pos+I)); if V(I)=64 then return; end if;
             end if;
+            pragma Loop_Invariant(Pads<=I+1);
+            pragma Loop_Invariant(for all J in 0 .. I => V(J)<64);
          end loop;
          if Pads>2 or else (Pads>0 and then Pos+4/=Text'Length) or else Used+3-Pads>Data'Length then return; end if;
          if Pads=2 and then V(1) mod 16/=0 then return; end if;

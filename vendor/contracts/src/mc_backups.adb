@@ -23,8 +23,9 @@ package body MC_Backups with SPARK_Mode is
    end Valid_Catalog;
    procedure Chain (C : Catalog; Count, Terminal : Natural; Members : out Selection;
       Commitment : out Digest; Status : out Outcome) is
-      Here, Parent : Natural; Path : array (Index) of Natural := (others => 0);
-      Depth : Natural := 0; B : Bytes (1..72) := (others => 0);
+      Here : Index; Parent : Natural range 0 .. Capacity;
+      Path : array (Index) of Index := (others => 1);
+      Depth : Natural range 0 .. Capacity := 0; B : Bytes (1..72) := (others => 0);
    begin
       Members := (others => False); Commitment := Zero_Digest; Status := Invalid_Input;
       if not Valid_Catalog (C,Count) or else Terminal = 0 or else Terminal > Count then return; end if;
@@ -105,6 +106,7 @@ package body MC_Backups with SPARK_Mode is
       Terminal := 0; Members := (others => False); Status := Invalid_Input;
       if not Valid (P) or else not Valid_Catalog (C,Count) then return; end if;
       for I in 1..Count loop
+         pragma Loop_Invariant(Terminal in 0 .. Capacity);
          Restore_Set (P,C,Count,I,Candidate,S);
          if S = OK and then (Terminal = 0
            or else C (I).Through_Position > C (Terminal).Through_Position

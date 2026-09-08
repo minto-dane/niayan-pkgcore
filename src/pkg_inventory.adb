@@ -39,6 +39,7 @@ package body Pkg_Inventory with SPARK_Mode is
       Header(33..64):=M.Package_Set; Header(65..96):=M.Contract;
       MC_Codec.Put32(Header,97,Word(M.Count)); MC_SHA256.Update(C,Header);
       for I in 1..M.Count loop
+         pragma Loop_Invariant(MC_SHA256.Length(C)<=128+Wide(I-1)*(136+Wide(MC_Text.Max_Length)));
          Prefix:=(others=>0); MC_Codec.Put32(Prefix,1,Word(MC_Text.Length(M.Items(I).Path)));
          Prefix(5):=Byte(Pkg_File_Plan.State_Domain'Pos(M.Items(I).Domain));
          Prefix(6):=Boolean'Pos(M.Items(I).Allow_Automatic_Repair);
@@ -56,7 +57,10 @@ package body Pkg_Inventory with SPARK_Mode is
    begin
       B:=(others=>0); Used:=0; Status:=Invalid_Input;
       if not Valid(M) then return; end if;
-      for I in 1..M.Count loop Need:=Need+136+MC_Text.Length(M.Items(I).Path); end loop;
+      for I in 1..M.Count loop
+         pragma Loop_Invariant(Need in 160..160+(I-1)*(136+MC_Text.Max_Length));
+         Need:=Need+136+MC_Text.Length(M.Items(I).Path);
+      end loop;
       if Need>B'Length or else Need>Maximum_Encoding then Status:=Exhausted; return; end if;
       for I in Magic'Range loop B(B'First+I-1):=Byte(Character'Pos(Magic(I))); end loop;
       B(B'First+8..B'First+23):=M.Root_ID;
@@ -64,7 +68,12 @@ package body Pkg_Inventory with SPARK_Mode is
       B(B'First+32..B'First+63):=M.Package_Set; B(B'First+64..B'First+95):=M.Contract;
       MC_Codec.Put32(B,B'First+96,Word(M.Count)); Pos:=B'First+128;
       for I in 1..M.Count loop
-         L:=MC_Text.Length(M.Items(I).Path); MC_Codec.Put32(B,Pos,Word(L));
+         pragma Loop_Invariant(Pos in B'First+128..B'Last-31);
+         L:=MC_Text.Length(M.Items(I).Path);
+         if B'Last-31-Pos<136+L then
+            B:=(others=>0); Status:=Exhausted; return;
+         end if;
+         MC_Codec.Put32(B,Pos,Word(L));
          B(Pos+4):=Byte(Pkg_File_Plan.State_Domain'Pos(M.Items(I).Domain));
          B(Pos+5):=Boolean'Pos(M.Items(I).Allow_Automatic_Repair);
          B(Pos+6):=Boolean'Pos(M.Items(I).Boot_Or_Security_Critical);
@@ -78,7 +87,9 @@ package body Pkg_Inventory with SPARK_Mode is
    end Encode;
    procedure Decode(B : Bytes; M : out Manifest; Status : out Outcome) is
       Pos : Natural; N,L : Counter; S : Outcome; Text : String(1..MC_Text.Max_Length) := (others => ' ');
-      function Zeros(A,Z : Natural) return Boolean is
+      function Zeros(A,Z : Natural) return Boolean with
+        Pre => (if A<=Z then A in B'Range and then Z in B'Range)
+      is
       begin for I in A..Z loop if B(I)/=0 then return False; end if; end loop; return True; end;
    begin
       M:=(others=><>); Status:=Invalid_Input;
@@ -95,6 +106,7 @@ package body Pkg_Inventory with SPARK_Mode is
       N:=Counter(MC_Codec.U32(B,B'First+96)); if N=0 or else N>Max_Entries then return; end if;
       M.Count:=Natural(N); Pos:=B'First+128;
       for I in 1..M.Count loop
+         pragma Loop_Invariant(Pos in B'First+128..B'Last-31);
          if Pos>B'Last-31 or else B'Last-31-Pos<136 then return; end if;
          L:=Counter(MC_Codec.U32(B,Pos));
          if L=0 or else L>MC_Text.Max_Length

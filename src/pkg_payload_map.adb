@@ -25,8 +25,10 @@ package body Pkg_Payload_Map with SPARK_Mode is
       Files.Count:=N;
       for I in 1..N loop
          Text(B,M,1117,I,Base_Name,Status); if Status/=OK then return; end if;
-         Number(B,M,1116,I,Index,Status); if Status/=OK or else Index>=Wide(Count(M,1118)) then Status:=Corrupt; return; end if;
-         Text(B,M,1118,Positive(Index+1),Directory_Name,Status); if Status/=OK then return; end if;
+         Number(B,M,1116,I,Index,Status);
+         if Status/=OK or else Index>=Wide(Natural'Last) or else Index>=Wide(Count(M,1118))
+         then Status:=Corrupt; return; end if;
+         Text(B,M,1118,Natural(Index)+1,Directory_Name,Status); if Status/=OK then return; end if;
          declare D : constant String:=MC_Text.Image(Directory_Name); P : constant String:=MC_Text.Image(Base_Name); begin
             if D'Length=0 or else D(D'First)/='/' or else D(D'Last)/='/' or else not MC_Paths.Safe_Component(P)
             then Status:=Unsupported; return; end if;

@@ -40,7 +40,10 @@ package MC_Control with SPARK_Mode, Pure is
       Expected_Revision, New_Trust_Epoch, Not_Before, Expires : Counter := 0;
       Desired : Mode := Quarantined;
    end record;
-   function Valid (A : Authority) return Boolean with Global => null;
+   function Valid (A : Authority) return Boolean with Global => null,
+     Post => (if Valid'Result then A.Scope/=Zero_Identity and then A.Contract/=Zero_Digest
+       and then A.Serial>0 and then A.Count>=2
+       and then A.Tighten_Threshold<=A.Count and then A.Resume_Threshold<=A.Count);
    function Valid (S : State) return Boolean with Global => null;
    function Permits (Current : Mode; Action : Operation) return Boolean
       with Global => null;

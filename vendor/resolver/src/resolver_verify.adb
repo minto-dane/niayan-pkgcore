@@ -3,7 +3,8 @@ package body Resolver_Verify with SPARK_Mode is
    procedure Spend (Fuel : in out Natural; OK : out Boolean) is
    begin OK := Fuel > 0; if OK then Fuel := Fuel - 1; end if; end Spend;
    procedure Check_State (U : Universe; S : Selection; Final : Boolean;
-      R : out Report; Fuel : in out Natural) is
+      R : out Report; Fuel : in out Natural) with Pre => Well_Formed(U), Post => not R.Execution_Permit
+   is
       V : Truth_Array; Enough : Boolean;
    begin
       R := (Code => Valid_Selection, others => <>);
@@ -40,12 +41,13 @@ package body Resolver_Verify with SPARK_Mode is
    end Check_State;
    procedure Check_Selection (U : Universe; S : Selection;
       R : out Report; Fuel : in out Natural) is
-      Total : Counter := 0; Changes : Natural := 0;
+      Total : Counter := 0; Changes : Natural range 0..Max_Items := 0;
    begin
       R := (others => <>);
       if not Well_Formed (U) then return; end if;
       Check_State (U, S, True, R, Fuel); if R.Code /= Valid_Selection then return; end if;
       for I in 1 .. U.Item_Count loop
+         pragma Loop_Invariant(Changes<=I-1 and then Total<=U.Maximum_Transfer and then not R.Execution_Permit);
          if S (I) /= U.Items (I).Initially_Present or else U.Items (I).Reinstall_Requested then
             Changes := Changes + 1;
          end if;
@@ -78,6 +80,7 @@ package body Resolver_Verify with SPARK_Mode is
       S := Initial (U); Check_State (U, S, False, R, Fuel);
       if R.Code /= Valid_Selection then return; end if;
       for I in 1 .. P.Count loop
+         pragma Loop_Invariant(not R.Execution_Permit);
          declare A : Action renames P.Steps (I); begin
             R.Step_Index := I;
             if A.Subject = 0 or else A.Subject > U.Item_Count or else Seen (A.Subject) then
@@ -110,6 +113,7 @@ package body Resolver_Verify with SPARK_Mode is
       end loop;
       if S /= P.Selected then R.Code := Final_Mismatch; return; end if;
       for I in 1 .. U.Item_Count loop
+         pragma Loop_Invariant(not R.Execution_Permit);
          if U.Items (I).Reinstall_Requested and then not Seen (I) then
             R.Code := Final_Mismatch; R.Item_Index := I; return;
          end if;

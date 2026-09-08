@@ -32,9 +32,11 @@ package MC_Backups with SPARK_Mode, Pure is
       Minimum_Copies, Minimum_Domains : Positive range 1 .. Max_Copies := 2;
    end record;
    function Valid (P : Policy) return Boolean with Global => null;
-   function Valid_Catalog (C : Catalog; Count : Natural) return Boolean with Global => null;
+   function Valid_Catalog (C : Catalog; Count : Natural) return Boolean
+     with Global => null, Post => (if Valid_Catalog'Result then Count in 1 .. Capacity);
    procedure Chain (C : Catalog; Count, Terminal : Natural; Members : out Selection;
-      Commitment : out Digest; Status : out Outcome) with Global => null;
+      Commitment : out Digest; Status : out Outcome) with Global => null,
+        Post => (if Status = OK then Count in 1 .. Capacity and then Terminal in 1 .. Count);
    function Usable (P : Policy; B : Backup) return Boolean with Global => null;
    procedure Restore_Set (P : Policy; C : Catalog; Count, Terminal : Natural;
       Members : out Selection; Status : out Outcome) with Global => null;

@@ -28,19 +28,26 @@ package MC_Retry_Budget with SPARK_Mode, Pure is
    procedure Reserve (S : in out State; P : Policy; Boot : Identity;
       Now : Counter; Status : out Outcome)
      with Global => null,
-       Post => (if Status /= OK then S = S'Old)
+       Post => (if Valid(S)'Old then Valid(S))
+         and then (if Status /= OK then S = S'Old)
          and then (if Status = OK then Valid(S) and then S.Total = S'Old.Total + 1
-           and then S.Boot_ID = Boot and then S.Count <= P.Maximum_In_Window);
+           and then S.Boot_ID = Boot and then S.Count <= P.Maximum_In_Window
+           and then S.Last_Now=Now);
    procedure Confirm_Stable (S : in out State; Now : Counter; Status : out Outcome)
      with Global => null,
        Post => (if Status /= OK then S = S'Old)
-         and then S.Total = S'Old.Total and then S.Count = S'Old.Count;
+         and then S.Total = S'Old.Total and then S.Count = S'Old.Count
+         and then S.Boot_ID=S'Old.Boot_ID
+         and then S.Attempts=S'Old.Attempts and then S.Not_Before=S'Old.Not_Before
+         and then (if Status=OK then Valid(S) and then S.Last_Now=Now);
    procedure Rebind_Boot (S : in out State; P : Policy; New_Boot : Identity;
       Now : Counter; Status : out Outcome)
      with Global => null,
        Post => (if Status /= OK then S = S'Old)
          and then S.Total = S'Old.Total and then S.Count = S'Old.Count
-         and then S.Consecutive = S'Old.Consecutive;
+         and then S.Consecutive = S'Old.Consecutive
+         and then (if Status=OK then Valid(S) and then S.Boot_ID=New_Boot
+           and then S.Last_Now=Now);
    -- Durable state. Reboot moves outstanding window debt to the NEW clock's
    -- present; it never refills a budget. No automatic lifetime reset exists.
    -- Caller may only Confirm_Stable after independent stable-health evidence.

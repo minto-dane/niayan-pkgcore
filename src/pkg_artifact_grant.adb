@@ -16,7 +16,7 @@ package body Pkg_Artifact_Grant with SPARK_Mode is
       MC_Codec.Put64(F,121,Wide(G.Revision)); MC_Codec.Put64(F,129,Wide(G.Issued));
       MC_Codec.Put64(F,137,Wide(G.Expires)); MC_Codec.Put64(F,145,Wide(G.Size)); MC_Codec.Put16(F,153,U'Length);
       for I in U'Range loop F(160+I):=Byte(Character'Pos(U(I))); end loop;
-      Used:=160+U'Length; B(B'First..B'First+Used-1):=F(1..Used); Status:=OK;
+      Used:=160+U'Length; B(B'First..B'First+(Used-1)):=F(1..Used); Status:=OK;
    end;
    procedure Decode(B : Bytes; G : out Grant; Status : out Outcome) is
       F : Bytes(1..Maximum_Size):=(others=>0); Check : Bytes(1..Maximum_Size); N, Used : Natural;

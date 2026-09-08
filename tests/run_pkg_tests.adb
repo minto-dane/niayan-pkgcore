@@ -110,6 +110,16 @@ begin
    Compare("1a","1.1",Pkg_Versions.Older);
    Compare("","",Pkg_Versions.Equal);
    Compare("1+0","1.0",Pkg_Versions.Equal);
+   declare
+      Empty : constant String(-10 .. -11) := "";
+      Shifted : constant String(27 .. 30) := "1.10";
+      High : constant String(Integer'Last-3 .. Integer'Last-1) := "1.9";
+   begin
+      Compare(Empty,"",Pkg_Versions.Equal);
+      Compare(Empty,High,Pkg_Versions.Older);
+      Compare(Shifted,High,Pkg_Versions.Newer);
+      Compare(High,Shifted,Pkg_Versions.Older);
+   end;
    -- Dependency selection moved from the old inventory API to resolvercore.
    -- Keep closure, protected-removal and stale-generation coverage here.
    Universe.Subject := (Root => (others => 1), Boot => (others => 2),

@@ -37,7 +37,8 @@ package Pkg_File_Plan with SPARK_Mode, Pure is
    function Equal(A, B : Shape) return Boolean with Global=>null;
    function Encode(S : Shape) return Encoded_Shape with Global=>null;
    procedure Decode_Shape(B : Bytes; S : out Shape; Status : out Outcome) with Global=>null;
-   procedure Encode(P : Plan; B : out Bytes; Used : out Natural; Status : out Outcome) with Global=>null;
+   procedure Encode(P : Plan; B : out Bytes; Used : out Natural; Status : out Outcome) with Global=>null,
+     Post => Used<=B'Length;
    procedure Decode(B : Bytes; P : out Plan; Status : out Outcome) with Global=>null;
    -- Exact preimage and postimage. Config changes are explicitly approved preimages,
    -- never an implicit overwrite of local edits. Data, secrets, audit and trust state

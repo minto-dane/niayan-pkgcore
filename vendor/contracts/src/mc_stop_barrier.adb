@@ -34,62 +34,51 @@ package body MC_Stop_Barrier with SPARK_Mode is
       end loop;
       return True;
    end Valid;
+   function Valid_Receipt (R : Receipt; Current : Phase; Last_Now : Counter) return Boolean is
+     ((R.Current/=Awaiting or else R=Receipt'(others=><>))
+      and then (R.Current/=Acknowledged or else R.Node_Sequence>0)
+      and then (R.Current/=Isolated or else R.Fence_Sequence>0)
+      and then (R.Current/=Uncertain or else Current=Blocked)
+      and then (R.Current=Awaiting or else
+        (R.Proof/=Zero_Digest and then R.Audit_Head/=Zero_Digest
+         and then R.Expires>R.Observed and then R.Observed<=Last_Now
+         and then (R.Node_Sequence>0 or else R.Fence_Sequence>0)))
+      and then (Current/=Sealed or else R.Current in Acknowledged | Isolated));
    function Valid (S : State) return Boolean is
-   begin
-      if S.Policy_Hash = Zero_Digest or else S.Cluster_ID = Zero_Identity
-        or else S.Barrier_ID = Zero_Identity or else S.Receiver_Boot = Zero_Identity
-        or else S.Count = 0 then return False; end if;
-      for I in 1..S.Count loop
-         if S.Members (I).Current = Awaiting and then S.Members (I) /= (Receipt'(others => <>)) then
-            return False;
-         end if;
-         if S.Members (I).Current = Acknowledged and then S.Members (I).Node_Sequence = 0 then return False; end if;
-         if S.Members (I).Current = Isolated and then S.Members (I).Fence_Sequence = 0 then return False; end if;
-         if S.Members (I).Current = Uncertain and then S.Current /= Blocked then return False; end if;
-         if S.Members (I).Current /= Awaiting then
-            if S.Members (I).Proof = Zero_Digest or else S.Members (I).Audit_Head = Zero_Digest
-              or else S.Members (I).Expires <= S.Members (I).Observed
-              or else S.Members (I).Observed > S.Last_Now
-              or else (S.Members (I).Node_Sequence = 0 and then S.Members (I).Fence_Sequence = 0)
-            then return False; end if;
-         end if;
-         if S.Current = Sealed and then S.Members (I).Current not in Acknowledged | Isolated
-         then return False; end if;
-      end loop;
-      return True;
-   end Valid;
+     (S.Policy_Hash/=Zero_Digest and then S.Cluster_ID/=Zero_Identity
+      and then S.Barrier_ID/=Zero_Identity and then S.Receiver_Boot/=Zero_Identity
+      and then S.Count>0
+      and then (for all I in 1 .. S.Count => Valid_Receipt(S.Members(I),S.Current,S.Last_Now)));
    function Fingerprint (P : Policy) return Digest is (MC_SHA256.Hash (Encode (P)));
    function Ready (P : Policy; S : State; Now : Counter) return Boolean is
-   begin
-      if not Valid (P) or else not Valid (S) or else S.Current = Blocked
-        or else S.Policy_Hash /= Fingerprint (P) or else S.Cluster_ID /= P.Cluster_ID
-        or else S.Barrier_ID /= P.Barrier_ID or else S.Receiver_Boot /= P.Receiver_Boot
-        or else S.Count /= P.Count or else Now < S.Last_Now then return False; end if;
-      for I in 1..S.Count loop
-         if S.Members (I).Current not in Acknowledged | Isolated
-           or else S.Members (I).Observed > Now or else S.Members (I).Expires <= Now
-           or else S.Members (I).Expires - S.Members (I).Observed > P.Maximum_Age
-           or else Now - S.Members (I).Observed > P.Maximum_Age then return False; end if;
-         if S.Members (I).Current = Isolated and then
-           (S.Members (I).Isolation_Paths and P.Members (I).Required_Isolation_Paths)
-              /= P.Members (I).Required_Isolation_Paths then return False; end if;
-      end loop;
-      return True;
-   end Ready;
+     (Valid(P) and then Valid(S) and then S.Current/=Blocked
+      and then S.Policy_Hash=Fingerprint(P) and then S.Cluster_ID=P.Cluster_ID
+      and then S.Barrier_ID=P.Barrier_ID and then S.Receiver_Boot=P.Receiver_Boot
+      and then S.Count=P.Count and then Now>=S.Last_Now
+      and then (for all I in 1 .. S.Count =>
+        S.Members(I).Current in Acknowledged | Isolated
+        and then S.Members(I).Observed<=Now and then S.Members(I).Expires>Now
+        and then S.Members(I).Expires-S.Members(I).Observed<=P.Maximum_Age
+        and then Now-S.Members(I).Observed<=P.Maximum_Age
+        and then (S.Members(I).Current/=Isolated or else
+          (S.Members(I).Isolation_Paths and P.Members(I).Required_Isolation_Paths)
+            =P.Members(I).Required_Isolation_Paths)));
    function Usable (P : Policy; S : State; Now : Counter) return Boolean is
       (S.Current = Sealed and then Ready (P,S,Now));
    procedure Initialize (P : Policy; S : out State; Status : out Outcome) is
    begin
       S := (others => <>); Status := Invalid_Input;
       if not Valid (P) then return; end if;
-      S.Policy_Hash := Fingerprint (P); S.Cluster_ID := P.Cluster_ID;
+      S.Policy_Hash := Fingerprint (P);
+      if S.Policy_Hash=Zero_Digest then Status:=Corrupt; return; end if;
+      S.Cluster_ID := P.Cluster_ID;
       S.Barrier_ID := P.Barrier_ID; S.Receiver_Boot := P.Receiver_Boot;
       S.Count := P.Count; Status := OK;
    end Initialize;
    procedure Observe (P : Policy; S : in out State; E : Evidence;
       Signature_Verified : Boolean; Now : Counter; Status : out Outcome)
    is
-      T : State := S; K : Natural range 0..Capacity := 0;
+      T : State := S; R : Receipt; K : Natural range 0..Capacity := 0;
    begin
       Status := Denied;
       if not Valid (P) or else not Valid (S) or else not Signature_Verified
@@ -104,16 +93,19 @@ package body MC_Stop_Barrier with SPARK_Mode is
       then return; end if;
       for I in 1..P.Count loop
          if E.Node_ID = P.Members (I).Node_ID and then E.Resource_ID = P.Members (I).Resource_ID then K := I; end if;
+         pragma Loop_Invariant(K<=I);
       end loop;
       if K = 0 or else E.Node_ID /= P.Members (K).Node_ID
         or else E.Subject_Boot /= P.Members (K).Boot_ID
         or else E.Stamp.Observed_At < S.Members (K).Observed then return; end if;
+      R:=S.Members(K);
+      pragma Assert(Valid_Receipt(R,S.Current,S.Last_Now));
       if E.Source = Node_Agent then
          if E.Stamp.Sequence <= S.Members (K).Node_Sequence then Status := Stale; return; end if;
-         T.Members (K).Node_Sequence := E.Stamp.Sequence;
+         R.Node_Sequence := E.Stamp.Sequence;
       else
          if E.Stamp.Sequence <= S.Members (K).Fence_Sequence then Status := Stale; return; end if;
-         T.Members (K).Fence_Sequence := E.Stamp.Sequence;
+         R.Fence_Sequence := E.Stamp.Sequence;
       end if;
       case E.Kind is
          when Drained =>
@@ -124,28 +116,35 @@ package body MC_Stop_Barrier with SPARK_Mode is
             then
                -- A fresh authenticated regression must invalidate an earlier
                -- seal, not merely be ignored while that seal remains usable.
-               T.Members (K).Current := Uncertain; T.Current := Blocked;
+               R.Current := Uncertain; T.Current := Blocked;
             else
             -- Isolation must not silently be downgraded to a node's own assertion.
             if S.Members (K).Current = Isolated then return; end if;
             if E.Last_Completed < S.Members (K).Completed then Status := Stale; return; end if;
-               T.Members (K).Current := Acknowledged;
+               R.Current := Acknowledged;
             end if;
          when Fenced =>
             if E.Source /= Fence_Observer then return; end if;
             if not E.Retirement_Durable
               or else (E.Isolation_Paths and P.Members (K).Required_Isolation_Paths)
                 /= P.Members (K).Required_Isolation_Paths
-            then T.Members (K).Current := Uncertain; T.Current := Blocked;
-            else T.Members (K).Current := Isolated; end if;
+            then R.Current := Uncertain; T.Current := Blocked;
+            else R.Current := Isolated; end if;
          when Unsafe =>
-            T.Members (K).Current := Uncertain; T.Current := Blocked;
+            R.Current := Uncertain; T.Current := Blocked;
       end case;
-      T.Members (K).Observed := E.Stamp.Observed_At; T.Members (K).Expires := E.Stamp.Expires_At;
-      T.Members (K).Proof := MC_SHA256.Hash (Encode (E)); T.Members (K).Audit_Head := E.Audit_Head;
-      T.Members (K).Isolation_Paths := E.Isolation_Paths;
-      if E.Kind = Drained then T.Members (K).Completed := E.Last_Completed; end if;
-      T.Revision := S.Revision + 1; T.Last_Now := Now; S := T; Status := OK;
+      R.Observed := E.Stamp.Observed_At; R.Expires := E.Stamp.Expires_At;
+      R.Proof := MC_SHA256.Hash (Encode (E));
+      if R.Proof=Zero_Digest then Status:=Corrupt; return; end if;
+      R.Audit_Head := E.Audit_Head;
+      R.Isolation_Paths := E.Isolation_Paths;
+      if E.Kind = Drained then R.Completed := E.Last_Completed; end if;
+      T.Revision := S.Revision + 1; T.Last_Now := Now;
+      pragma Assert(Valid_Receipt(R,T.Current,T.Last_Now));
+      T.Members(K):=R;
+      pragma Assert(T.Current=S.Current or else T.Current=Blocked);
+      pragma Assert(for all J in 1 .. T.Count => (if J/=K then T.Members(J)=S.Members(J)));
+      S := T; Status := OK;
    end Observe;
    procedure Seal (P : Policy; S : in out State; Now : Counter; Status : out Outcome) is
    begin

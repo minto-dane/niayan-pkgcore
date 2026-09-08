@@ -7,7 +7,9 @@ jobs:
   native:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    container: debian:13.6-slim@sha256:abc9cb88a5587630d7f915f47b23b0668fe250fbfc6457aa4d52b534c1bbf73f
+    container:
+      image: debian:13.6-slim@sha256:abc9cb88a5587630d7f915f47b23b0668fe250fbfc6457aa4d52b534c1bbf73f
+      options: --memory=3g --memory-swap=3g --cpus=1 --pids-limit=128
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -23,7 +25,9 @@ jobs:
   proof:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
-    container: debian:13.6-slim@sha256:abc9cb88a5587630d7f915f47b23b0668fe250fbfc6457aa4d52b534c1bbf73f
+    container:
+      image: debian:13.6-slim@sha256:abc9cb88a5587630d7f915f47b23b0668fe250fbfc6457aa4d52b534c1bbf73f
+      options: --memory=3g --memory-swap=3g --cpus=1 --pids-limit=128
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -37,7 +41,7 @@ jobs:
           runuser -u builder -- sh -ec '
             prover_bin=$(python3 ci/install-gnatprove.py)
             export PATH="$prover_bin:$PATH"
-            make flow prove
+            make flow prove JOBS=1
           '
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()

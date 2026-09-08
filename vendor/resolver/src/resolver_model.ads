@@ -87,7 +87,24 @@ package Resolver_Model with SPARK_Mode, Pure is
    end record;
    function Less (A, B : Digest) return Boolean with Global => null;
    function Binding_Valid (B : Binding) return Boolean with Global => null;
-   function Well_Formed (U : Universe) return Boolean with Global => null;
+   function References_Valid (U : Universe) return Boolean is
+     ((for all I in 1..U.Node_Count =>
+        (case U.Nodes(I).Op is
+           when Constant_False | Constant_True =>
+             U.Nodes(I).Subject=0 and then U.Nodes(I).Left=0 and then U.Nodes(I).Right=0,
+           when Present =>
+             U.Nodes(I).Subject in 1..U.Item_Count
+             and then U.Nodes(I).Left=0 and then U.Nodes(I).Right=0,
+           when Not_Op =>
+             U.Nodes(I).Subject=0 and then U.Nodes(I).Left in 1..I-1 and then U.Nodes(I).Right=0,
+           when And_Op | Or_Op =>
+             U.Nodes(I).Subject=0 and then U.Nodes(I).Left in 1..I-1 and then U.Nodes(I).Right in 1..I-1))
+      and then (for all I in 1..U.Rule_Count => U.Rules(I).Predicate in 1..U.Node_Count)
+      and then (for all I in 1..U.Claim_Count => U.Claims(I).Owner in 1..U.Item_Count))
+     with Global => null;
+   -- Structural references alone do not validate binding, policy or ordering.
+   function Well_Formed (U : Universe) return Boolean with Global => null,
+     Post => (if Well_Formed'Result then References_Valid(U));
    function Initial (U : Universe) return Selection with Global => null;
    function Canonical_Selection (U : Universe; S : Selection) return Boolean
      with Global => null;

@@ -4,8 +4,10 @@ package MC_Text with SPARK_Mode, Pure is
    Max_Length : constant := 4_096;
    type Value is private;
    Empty : constant Value;
-   function Length (V : Value) return Natural with Global => null;
-   function Image (V : Value) return String with Global => null;
+   function Length (V : Value) return Natural with Global => null,
+     Post => Length'Result<=Max_Length;
+   function Image (V : Value) return String with Global => null,
+     Post => Image'Result'First=1 and then Image'Result'Length=Length(V);
    procedure Set (V : out Value; S : String; Status : out Outcome)
      with Global => null, Post => (if Status = OK then Image (V) = S);
    function Equal (A, B : Value) return Boolean with Global => null;

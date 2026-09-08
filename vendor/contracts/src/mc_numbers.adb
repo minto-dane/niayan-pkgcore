@@ -11,6 +11,20 @@ package body MC_Numbers with SPARK_Mode is
       end loop; Status:=OK;
    end;
    function Image(N : Counter) return String is
-      S : constant String:=Counter'Image(N);
-   begin return S(S'First+1..S'Last); end;
+      S : String(1..19):=(others=>'0');
+      Remaining : Counter:=N;
+      First : Positive range 1..19:=1;
+   begin
+      for I in reverse S'Range loop
+         S(I):=Character'Val(48+Remaining mod 10);
+         Remaining:=Remaining/10;
+         if Remaining=0 then First:=I; exit; end if;
+      end loop;
+      pragma Assert(Remaining=0);
+      declare
+         -- Preserve the index origin of the previous trimmed Counter'Image.
+         Last : constant Positive:=21-First;
+         Result : constant String(2..Last):=S(First..S'Last);
+      begin return Result; end;
+   end;
 end MC_Numbers;

@@ -2,12 +2,21 @@
 with Pkg_EVR; with Pkg_Versions;
 package body Pkg_Dependency with SPARK_Mode is
    procedure Parse(Text : String; E : out Expression; Status : out Outcome) is
-      P : Natural:=Text'First;
+      P : Positive;
       Failed : Boolean:=False; Parsed_Root : Node_ID;
-      procedure Read_Word(Word : out MC_Text.Value) is
+      function Cursor_Valid return Boolean is
+        (Text'Length in 1..4_096 and then Text'Last<Integer'Last
+         and then P in Text'First..Text'Last+1);
+      procedure Read_Word(Word : out MC_Text.Value) with
+        Pre => Cursor_Valid, Post => Cursor_Valid and then P>=P'Old
+          and then (if not Failed then MC_Text.Length(Word)=P-P'Old)
+          and then (if Failed'Old then Failed)
+      is
          First : constant Natural:=P; Depth : Natural:=0; Local_Status : Outcome;
       begin
          while P<=Text'Last loop
+            pragma Loop_Invariant(Cursor_Valid and then P>=First and then Depth<=P-First);
+            pragma Loop_Variant(Increases=>P);
             if Text(P)=' ' then exit;
             elsif Text(P)='(' then Depth:=Depth+1;
             elsif Text(P)=')' then if Depth=0 then exit; else Depth:=Depth-1; end if;
@@ -18,15 +27,31 @@ package body Pkg_Dependency with SPARK_Mode is
          MC_Text.Set(Word,Text(First..P-1),Local_Status);
          if Local_Status/=OK then Failed:=True; end if;
       end Read_Word;
-      procedure Spaces is begin while P<=Text'Last and then Text(P)=' ' loop P:=P+1; end loop; end;
-      procedure Add(N : Node; Result : out Node_ID) is
+      procedure Spaces with Pre => Cursor_Valid,
+        Post => Cursor_Valid and then P>=P'Old
+      is
+      begin
+         while P<=Text'Last and then Text(P)=' ' loop
+            pragma Loop_Invariant(Cursor_Valid and then P>=P'Loop_Entry);
+            pragma Loop_Variant(Increases=>P);
+            P:=P+1;
+         end loop;
+      end;
+      procedure Add(N : Node; Result : out Node_ID) with
+        Post => E.Count>=E.Count'Old and then (if Failed'Old then Failed)
+      is
       begin
          Result:=0;
          if E.Count=Max_Nodes then Failed:=True; return; end if;
          E.Count:=E.Count+1; E.Nodes(E.Count):=N; Result:=E.Count;
       end;
-      procedure Operand(Depth : Natural; Result : out Node_ID);
+      procedure Operand(Depth : Natural; Result : out Node_ID) with
+        Pre => Cursor_Valid,
+        Post => Cursor_Valid and then P>=P'Old and then (if not Failed then P>P'Old)
+          and then (if Failed'Old then Failed),
+        Subprogram_Variant => (Increases=>Depth);
       procedure Operand(Depth : Natural; Result : out Node_ID) is
+         Entry_Pos : constant Positive:=P;
          L,R,A : Node_ID; Word : MC_Text.Value; N : Node; Op : Operator; S : Outcome; First_Op : Operator:=Capability;
       begin
          Result:=0;
@@ -35,6 +60,8 @@ package body Pkg_Dependency with SPARK_Mode is
          if Text(P)='(' then
             P:=P+1; Operand(Depth+1,L); if Failed then return; end if;
             loop
+               pragma Loop_Invariant(Cursor_Valid and then P>=P'Loop_Entry and then P>Entry_Pos);
+               pragma Loop_Variant(Increases=>P);
                Spaces; if P>Text'Last then Failed:=True; return; end if;
                if Text(P)=')' then
                   if First_Op=Capability then Failed:=True; return; end if;
@@ -86,31 +113,18 @@ package body Pkg_Dependency with SPARK_Mode is
                   if MC_Text.Length(V.Version)=0 then Failed:=True; return; end if;
                end;
             end if;
+            pragma Assert(if not Failed then P>Entry_Pos);
             Add(N,Result); return;
          end if;
       end Operand;
    begin
       E:=(others=><>); Status:=Invalid_Input;
       if Text'Length=0 or else Text'Length>4096 or else Text'Last=Integer'Last then return; end if;
+      P:=Text'First;
       for C of Text loop if Character'Pos(C)<32 or else Character'Pos(C)>126 then return; end if; end loop;
       Operand(0,Parsed_Root); E.Root:=Parsed_Root; Spaces;
       if not Failed and then P=Text'Last+1 and then Well_Formed(E) then Status:=OK; end if;
    end Parse;
-   function Well_Formed(E : Expression) return Boolean is
-   begin
-      if E.Root=0 or else E.Root>E.Count then return False; end if;
-      for I in 1..E.Count loop
-         if E.Nodes(I).Op=Capability then
-            if MC_Text.Length(E.Nodes(I).Name)=0 or else E.Nodes(I).Left/=0 or else E.Nodes(I).Right/=0
-               or else E.Nodes(I).Alternative/=0 then return False; end if;
-         else
-            if E.Nodes(I).Left=0 or else E.Nodes(I).Left>=I or else E.Nodes(I).Right=0 or else E.Nodes(I).Right>=I
-               or else E.Nodes(I).Alternative>=I then return False; end if;
-            if E.Nodes(I).Alternative/=0 and then E.Nodes(I).Op not in If_Op | Unless_Op then return False; end if;
-         end if;
-      end loop;
-      return True;
-   end;
    procedure Evaluate(E : Expression; Providers : Provider_Array; Count : Natural;
       Selected : Selection; Satisfied : out Boolean; Status : out Outcome) is
       use type Pkg_Versions.Ordering;
@@ -120,7 +134,10 @@ package body Pkg_Dependency with SPARK_Mode is
       -- package witnesses must not be replaced by unrelated global booleans.
       Single : Per_Package:=(others=>(others=>False)); Global : Values:=(others=>False);
       A,B : Pkg_EVR.EVR; O : Pkg_Versions.Ordering; Matched : Boolean;
-      function Boolean_Value(N : Node; V : Values) return Boolean is
+      subtype Version_Relation is Relation range LT..GT;
+      function Boolean_Value(N : Node; V : Values) return Boolean with
+        Pre => (if N.Op/=Capability then N.Left in V'Range and then N.Right in V'Range)
+      is
       begin
          case N.Op is
             when And_Op | With_Op => return V(N.Left) and V(N.Right);
@@ -144,13 +161,12 @@ package body Pkg_Dependency with SPARK_Mode is
                      if N.Comparison/=Any_Version and then Providers(J).Versioned then
                         Pkg_EVR.Parse(MC_Text.Image(Providers(J).Version),A,Status); if Status/=OK then return; end if;
                         O:=Pkg_EVR.Compare(A,B,Dependency_Match=>True);
-                        case N.Comparison is
+                        case Version_Relation(N.Comparison) is
                            when LT => Matched:=O=Pkg_Versions.Older;
                            when LE => Matched:=O/=Pkg_Versions.Newer;
                            when EQ => Matched:=O=Pkg_Versions.Equal;
                            when GE => Matched:=O/=Pkg_Versions.Older;
                            when GT => Matched:=O=Pkg_Versions.Newer;
-                           when Any_Version => Matched:=True;
                         end case;
                      end if;
                      if Matched then Global(I):=True; Single(Providers(J).Package_Index)(I):=True; end if;

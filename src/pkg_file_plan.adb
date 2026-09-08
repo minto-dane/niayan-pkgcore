@@ -5,24 +5,26 @@ package body Pkg_File_Plan with SPARK_Mode is
    use type Word; use type Wide;
    Magic : constant Bytes := (16#4D#,16#43#,16#50#,16#4C#,16#41#,16#4E#,16#30#,16#32#);
    function Valid(S : Shape) return Boolean is
+      subtype Existing_Kind is Kind range Regular..Symbolic_Link;
    begin
       if S.Node_Kind=Absent then return S=(Absent,0,0,0,0,0,0,Zero_Digest,Zero_Digest); end if;
       if (S.Mode and not 8#777#)/=0 or else S.Xattrs=Zero_Digest then return False; end if;
-      case S.Node_Kind is
+      case Existing_Kind(S.Node_Kind) is
          when Regular => return S.Content/=Zero_Digest and then S.Size<=8*1024*1024*1024;
          when Directory => return S.Content=Zero_Digest and then S.Size=0 and then S.Mtime_Sec=0
            and then S.Mtime_Nsec=0 and then (S.Mode and 8#022#)=0;
          when Symbolic_Link => return S.Content/=Zero_Digest and then S.Size in 1..4096
             and then S.Mode=8#777# and then S.Mtime_Sec=0 and then S.Mtime_Nsec=0;
-         when Absent => return False;
       end case;
    end Valid;
    function Equal(A,B : Shape) return Boolean is (A=B);
    function Allowed_Path(Path : String) return Boolean is
-      Start : Positive:=Path'First;
+      Start : Positive;
    begin
-      if not MC_Paths.Safe_Relative(Path) then return False; end if;
+      if Path'Length=0 or else Path'Last=Integer'Last or else not MC_Paths.Safe_Relative(Path) then return False; end if;
+      Start:=Path'First;
       for J in Path'Range loop
+         pragma Loop_Invariant(Start in Path'First..J);
          if Path(J)='/' then
             if Path(Start..J-1)=".mission" or else Path(Start..J-1)=".mc"
               or else (J-Start>=8 and then Path(Start..Start+7)=".mc-tmp-") then return False; end if;
@@ -117,11 +119,15 @@ package body Pkg_File_Plan with SPARK_Mode is
       MC_Codec.Put64(B,57,Wide(P.Epoch)); MC_Codec.Put64(B,65,Wide(P.Fence));
       B(73..104):=P.Package_Set; B(105..136):=P.Effect_Contract; MC_Codec.Put32(B,137,Word(P.Count));
       for I in 1..P.Count loop
+         pragma Loop_Invariant(Pos in Header_Size..B'Length);
          L:=MC_Text.Length(P.Changes(I).Path);
          if B'Length-Pos<4+L+2*Shape_Size then Status:=Exhausted; return; end if;
          MC_Codec.Put16(B,Pos+1,L); B(Pos+3):=Byte(State_Domain'Pos(P.Changes(I).Domain)); Pos:=Pos+4;
          declare S : constant String:=MC_Text.Image(P.Changes(I).Path); begin
-            for C of S loop Pos:=Pos+1; B(Pos):=Byte(Character'Pos(C)); end loop;
+            for J in S'Range loop
+               pragma Loop_Invariant(Pos=Pos'Loop_Entry+(J-S'First));
+               Pos:=Pos+1; B(Pos):=Byte(Character'Pos(S(J)));
+            end loop;
          end;
          B(Pos+1..Pos+Shape_Size):=Encode(P.Changes(I).Before); Pos:=Pos+Shape_Size;
          B(Pos+1..Pos+Shape_Size):=Encode(P.Changes(I).After); Pos:=Pos+Shape_Size;
@@ -150,6 +156,7 @@ package body Pkg_File_Plan with SPARK_Mode is
       P.Fence:=Counter(MC_Codec.U64(B,65)); P.Package_Set:=B(73..104); P.Effect_Contract:=B(105..136);
       P.Count:=Natural(MC_Codec.U32(B,137));
       for I in 1..P.Count loop
+         pragma Loop_Invariant(Pos in Header_Size..B'Length);
          if B'Length-Pos<4 then return; end if;
          L:=MC_Codec.U16(B,Pos+1);
          if L=0 or else L>MC_Text.Max_Length or else Natural(B(Pos+3))>State_Domain'Pos(State_Domain'Last)

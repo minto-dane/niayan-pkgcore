@@ -11,12 +11,20 @@ package body Resolver_Proof with SPARK_Mode is
    end Spend;
    procedure Normalize (C : Literals; Variables : Natural; N : out Literals;
       Used : out Natural; Tautology : out Boolean; Status : out Outcome;
-      Fuel : in out Natural) is
-      Positive_Seen, Negative_Seen : Polarity_Marks := (others => False); V : Natural;
+      Fuel : in out Natural) with
+        Pre => Variables<=Max_Variables,
+        Post => Used<=N'Length and then
+          (if Status=OK then N'First=1 and then
+            (for all J in 1..Used => N(J)/=0 and then abs N(J)<=Variables))
+   is
+      Positive_Seen, Negative_Seen : Polarity_Marks := (others => False); V : Natural; L : Literal;
    begin
       N := (others => 0); Used := 0; Tautology := False; Status := OK;
       if C'Length > 2 * Variables or else N'Length < C'Length or else N'First /= 1 then Status := Invalid_Input; return; end if;
-      for L of C loop
+      for K in C'Range loop
+         pragma Loop_Invariant(Used<=K-C'First and then Used<=N'Length);
+         pragma Loop_Invariant(for all J in 1..Used => N(J)/=0 and then abs N(J)<=Variables);
+         L:=C(K);
          Spend (Fuel, Status); if Status /= OK then return; end if;
          V := abs L;
          if V = 0 or else V > Variables then Status := Invalid_Input; return; end if;
@@ -31,13 +39,18 @@ package body Resolver_Proof with SPARK_Mode is
          end if;
       end loop;
    end Normalize;
-   procedure Append (D : in out Database; ID : Counter; C : Literals; Status : out Outcome) is
+   procedure Append (D : in out Database; ID : Counter; C : Literals; Status : out Outcome)
+     with Pre => C'Length<=2*Max_Variables
+   is
    begin
       Status := Exhausted;
       if D.Used = Max_Entries or else C'Length > Max_Literals - D.End_Data then return; end if;
       D.Used := D.Used + 1;
       D.Clauses (D.Used) := (ID => ID, Offset => D.End_Data, Length => C'Length, Active => True);
-      for L of C loop D.End_Data := D.End_Data + 1; D.Data (D.End_Data) := L; end loop;
+      for K in C'Range loop
+         pragma Loop_Invariant(D.End_Data=D.End_Data'Loop_Entry+(K-C'First));
+         D.End_Data := D.End_Data + 1; D.Data (D.End_Data) := C(K);
+      end loop;
       D.Maximum_ID := ID;
       if C'Length = 0 then D.Empty_Derived := True; end if;
       Status := OK;
@@ -64,7 +77,9 @@ package body Resolver_Proof with SPARK_Mode is
    procedure RUP (D : Database; C : Literals; Yes : out Boolean;
       Status : out Outcome; Fuel : in out Natural) is
       A : Assignment := (others => 0); V : Natural; Changed, Satisfied : Boolean;
-      Unassigned : Natural; Unit_Literal : Literal := 0;
+      subtype Nonzero_Literal is Literal with Dynamic_Predicate => Nonzero_Literal/=0;
+      Unassigned : Natural range 0..2*Max_Variables;
+      Unit_Literal : Nonzero_Literal := 1;
    begin
       Yes := False; Status := OK;
       for L of C loop
@@ -81,9 +96,11 @@ package body Resolver_Proof with SPARK_Mode is
             if D.Clauses (I).Active then
                Satisfied := False; Unassigned := 0;
                for J in 1 .. D.Clauses (I).Length loop
+                  pragma Loop_Invariant(Unassigned<=J-1);
                   Spend (Fuel, Status); if Status /= OK then return; end if;
                   declare L : constant Literal := D.Data (D.Clauses (I).Offset + J); begin
                      V := abs L;
+                     if V=0 or else V>D.Variables then Status:=Corrupt; return; end if;
                      if A (V) = Sign (L) then Satisfied := True; exit; end if;
                      if A (V) = 0 then Unassigned := Unassigned + 1; Unit_Literal := L; end if;
                   end;
@@ -106,13 +123,18 @@ package body Resolver_Proof with SPARK_Mode is
       Status : out Outcome; Fuel : in out Natural) is
       N : Literals (1 .. 2 * Max_Variables);
       Resolvent : Literals (1 .. 2 * Max_Variables) := (others=>0);
-      Count, RC : Natural; Taut, Yes, Found, RT : Boolean; Pivot : Literal;
+      Count : Natural; RC : Natural range 0..2*Max_Variables;
+      Taut, Yes, Found, RT : Boolean; Pivot : Literal;
       Seen : Marks;
       procedure Insert (L : Literal) is
-         V : constant Positive := abs L;
+         V : constant Natural := abs L;
       begin
+         if V=0 then Status:=Corrupt; return; end if;
          if Seen (V) = -Sign (L) then RT := True; end if;
-         if Seen (V) = 0 then RC := RC + 1; Resolvent (RC) := L; end if;
+         if Seen (V) = 0 then
+            if RC=Resolvent'Length then Status:=Exhausted; return; end if;
+            RC := RC + 1; Resolvent (RC) := L;
+         end if;
          Seen (V) := Sign (L);
       end Insert;
    begin
@@ -136,11 +158,13 @@ package body Resolver_Proof with SPARK_Mode is
             end loop;
             if Found then
                RC := 0; RT := False; Seen := (others => 0);
-               for J in 2 .. Count loop Insert (N (J)); end loop;
+               for J in 2 .. Count loop
+                  Insert (N (J)); if Status/=OK then return; end if;
+               end loop;
                for J in 1 .. D.Clauses (I).Length loop
                   Spend (Fuel, Status); if Status /= OK then return; end if;
                   declare L : constant Literal := D.Data (D.Clauses (I).Offset + J); begin
-                     if L /= -Pivot then Insert (L); end if;
+                     if L /= -Pivot then Insert (L); if Status/=OK then return; end if; end if;
                   end;
                end loop;
                if not RT then
@@ -154,11 +178,14 @@ package body Resolver_Proof with SPARK_Mode is
    end Add;
    procedure Delete (D : in out Database; ID : Counter;
       Status : out Outcome; Fuel : in out Natural) is
-      L : Natural := 1; R : Natural := D.Used; M : Natural;
+      L : Natural range 1..Max_Entries+1 := 1;
+      R : Natural range 0..Max_Entries := D.Used;
+      M : Positive range 1..Max_Entries;
    begin
       Status := Invalid_Input; if not D.Initialized or else ID = 0 then return; end if;
       Status := OK;
       while L <= R loop
+         pragma Loop_Variant(Decreases=>R-L);
          Spend (Fuel, Status); if Status /= OK then return; end if;
          M := L + (R - L) / 2;
          if D.Clauses (M).ID = ID then

@@ -8,9 +8,12 @@ package body MC_JSON with SPARK_Mode is
       Used:=0; Value:=(others=>0); Status:=Invalid_Input;
       if N=0 or else N>D.Count or else D.Nodes(N).Node_Kind/=String_Node or else D.Nodes(N).First<Data'First
         or else D.Nodes(N).Last>Data'Last or else D.Nodes(N).Last<=D.Nodes(N).First then return; end if;
+      if Data(D.Nodes(N).First)/=34 or else Data(D.Nodes(N).Last)/=34 then return; end if;
       I:=D.Nodes(N).First+1;
       while I<D.Nodes(N).Last loop
          pragma Loop_Variant(Increases=>I);
+         pragma Loop_Invariant(I in D.Nodes(N).First+1 .. D.Nodes(N).Last);
+         pragma Loop_Invariant(Used <= Value'Length);
          B:=Data(I); I:=I+1;
          if B=92 then
             if I>=D.Nodes(N).Last then return; end if;
@@ -19,9 +22,10 @@ package body MC_JSON with SPARK_Mode is
                when 98=>B:=8; when 102=>B:=12; when 110=>B:=10; when 114=>B:=13; when 116=>B:=9;
                when others=>return;
             end case; I:=I+1;
+         elsif B<32 or else B>126 or else B=34 then return;
          end if;
          if Used=Value'Length then Status:=Exhausted; return; end if;
-         Used:=Used+1; Value(Value'First+Used-1):=B;
+         Used:=Used+1; Value(Value'First+(Used-1)):=B;
       end loop; Status:=OK;
    end;
    function Member(Data : Bytes; D : Document; Object_Index : Index; Key : String) return Index is
@@ -32,11 +36,15 @@ package body MC_JSON with SPARK_Mode is
       I:=Natural(Object_Index)+1;
       while I<=D.Nodes(Object_Index).End_Index loop
          pragma Loop_Variant(Increases=>I);
+         pragma Loop_Invariant(I >= 1);
+         if I>=D.Count or else I>=D.Nodes(Object_Index).End_Index
+           or else D.Nodes(I).Parent/=Object_Index or else D.Nodes(I+1).Parent/=Object_Index
+           or else D.Nodes(I+1).End_Index<I+1
+           or else D.Nodes(I+1).End_Index>D.Nodes(Object_Index).End_Index then return 0; end if;
          String_Bytes(Data,D,I,B,Used,S); if S/=OK then return 0; end if;
          Equal:=Used=Key'Length;
          if Equal then for J in Key'Range loop if B(J-Key'First+1)/=Byte(Character'Pos(Key(J))) then Equal:=False; end if; end loop; end if;
          if Equal then return I+1; end if;
-         if I+1>D.Count or else D.Nodes(I+1).End_Index<I+1 then return 0; end if;
          I:=Natural(D.Nodes(I+1).End_Index)+1;
       end loop; return 0;
    end;
@@ -48,24 +56,53 @@ package body MC_JSON with SPARK_Mode is
       I:=Natural(Array_Index)+1;
       while I<=D.Nodes(Array_Index).End_Index loop
          pragma Loop_Variant(Increases=>I);
-         if P=Position then return I; end if; if D.Nodes(I).End_Index<I then return 0; end if;
+         pragma Loop_Invariant(P <= I);
+         if D.Nodes(I).Parent/=Array_Index or else D.Nodes(I).End_Index<I
+           or else D.Nodes(I).End_Index>D.Nodes(Array_Index).End_Index then return 0; end if;
+         if P=Position then return I; end if;
          I:=Natural(D.Nodes(I).End_Index)+1; P:=P+1;
       end loop; return 0;
    end;
    procedure Parse(Data : Bytes; D : out Document; Status : out Outcome) is
-      Pos : Natural:=Data'First; Bad : Boolean:=False;
-      procedure Space is begin while Pos<=Data'Last and then Data(Pos) in 9|10|13|32 loop Pos:=Pos+1; end loop; end;
-      procedure Add(K : Kind; Parent : Index; N : out Index) is
+      Pos : Positive; Bad : Boolean:=False;
+      function Cursor_Valid return Boolean is
+        (Data'Length in 1 .. 262_144 and then Data'Last<Integer'Last
+         and then Pos in Data'First .. Data'Last+1);
+      procedure Space with Pre => Cursor_Valid,
+        Post => Cursor_Valid and then Pos>=Pos'Old is
+      begin
+         while Pos<=Data'Last and then Data(Pos) in 9|10|13|32 loop
+            pragma Loop_Invariant(Cursor_Valid);
+            pragma Loop_Invariant(Pos>=Pos'Loop_Entry);
+            pragma Loop_Variant(Increases=>Pos);
+            Pos:=Pos+1;
+         end loop;
+      end Space;
+      procedure Add(K : Kind; Parent : Index; N : out Index)
+        with Pre => Cursor_Valid,
+          Post => Cursor_Valid and then Pos=Pos'Old and then D.Count>=D.Count'Old
+            and then (if not Bad then N=D.Count and then N>0
+              and then D.Count=D.Count'Old+1
+              and then D.Nodes(N)=Node'(K,Pos,Pos,Parent,N))
+      is
       begin
          N:=0; if D.Count=Maximum_Nodes then Bad:=True; return; end if;
          D.Count:=D.Count+1; N:=D.Count; D.Nodes(N):=(K,Pos,Pos,Parent,N);
       end;
-      procedure String_Node_Read(Parent : Index; N : out Index) is
+      procedure String_Node_Read(Parent : Index; N : out Index)
+        with Pre => Cursor_Valid,
+          Post => Cursor_Valid and then Pos>=Pos'Old and then D.Count>=D.Count'Old
+            and then (if not Bad then N in 1 .. D.Count and then Pos>Pos'Old)
+      is
          Escaped : Boolean:=False;
       begin
          Add(String_Node,Parent,N); if Bad then return; end if;
          if Pos>Data'Last or else Data(Pos)/=34 then Bad:=True; return; end if; Pos:=Pos+1;
          while Pos<=Data'Last loop
+            pragma Loop_Invariant(Cursor_Valid);
+            pragma Loop_Invariant(Pos>Pos'Loop_Entry-1);
+            pragma Loop_Invariant(N in 1 .. D.Count);
+            pragma Loop_Variant(Increases=>Pos);
             if Escaped then
                if Data(Pos) not in 34|92|47|98|102|110|114|116 then Bad:=True; return; end if;
                Escaped:=False;
@@ -75,7 +112,11 @@ package body MC_JSON with SPARK_Mode is
             Pos:=Pos+1;
          end loop; Bad:=True;
       end;
-      procedure Value_Read(Parent : Index; Depth : Natural; N : out Index);
+      procedure Value_Read(Parent : Index; Depth : Natural; N : out Index)
+        with Pre => Cursor_Valid,
+          Post => Cursor_Valid and then Pos>=Pos'Old and then D.Count>=D.Count'Old
+            and then (if not Bad then N in 1 .. D.Count and then Pos>Pos'Old),
+          Subprogram_Variant => (Increases => Depth);
       procedure Value_Read(Parent : Index; Depth : Natural; N : out Index) is
          K,Value_Node : Index; Earlier : Natural range 0..Maximum_Nodes+1; Object_Form : Boolean; Close_Byte : Byte;
          Key,Other : Bytes(1..256); KN,ON : Natural; S : Outcome;
@@ -89,6 +130,11 @@ package body MC_JSON with SPARK_Mode is
             Pos:=Pos+1; Space;
             if Pos<=Data'Last and then Data(Pos)=Close_Byte then D.Nodes(N).Last:=Pos; Pos:=Pos+1; return; end if;
             loop
+               pragma Loop_Invariant(Cursor_Valid);
+               pragma Loop_Invariant(Pos>Pos'Loop_Entry-1);
+               pragma Loop_Invariant(N in 1 .. D.Count);
+               pragma Loop_Invariant(D.Count>=D.Count'Loop_Entry);
+               pragma Loop_Variant(Increases=>Pos);
                if Object_Form then
                   String_Node_Read(N,K); if Bad then return; end if;
                   String_Bytes(Data,D,K,Key,KN,S); if S/=OK then Bad:=True; return; end if;
@@ -108,7 +154,12 @@ package body MC_JSON with SPARK_Mode is
             end loop;
          elsif Data(Pos) in 48..57 then
             Add(Number_Node,Parent,N); if Bad then return; end if;
-            while Pos<=Data'Last and then Data(Pos) in 48..57 loop Pos:=Pos+1; end loop;
+            while Pos<=Data'Last and then Data(Pos) in 48..57 loop
+               pragma Loop_Invariant(Cursor_Valid);
+               pragma Loop_Invariant(Pos>=Pos'Loop_Entry);
+               pragma Loop_Variant(Increases=>Pos);
+               Pos:=Pos+1;
+            end loop;
             D.Nodes(N).Last:=Pos-1;
             if Pos-D.Nodes(N).First>20 or else (Pos-D.Nodes(N).First>1 and then Data(D.Nodes(N).First)=48) then Bad:=True; end if;
          else
@@ -117,14 +168,20 @@ package body MC_JSON with SPARK_Mode is
             begin
                Add(Knd,Parent,N); if Bad then return; end if;
                if Literal'Length>Data'Last-Pos+1 then Bad:=True; return; end if;
-               for C of Literal loop if Data(Pos)/=Byte(Character'Pos(C)) then Bad:=True; return; end if; Pos:=Pos+1; end loop;
+               for J in Literal'Range loop
+                  pragma Loop_Invariant(Pos=Pos'Loop_Entry+(J-Literal'First));
+                  if Data(Pos)/=Byte(Character'Pos(Literal(J))) then Bad:=True; return; end if;
+                  Pos:=Pos+1;
+               end loop;
                D.Nodes(N).Last:=Pos-1;
             end;
          end if;
       end;
       N : Index;
    begin
-      D:=(others=><>); Status:=Invalid_Input; if Data'Length=0 or else Data'Length>262_144 then return; end if;
+      D:=(others=><>); Status:=Invalid_Input;
+      if Data'Length=0 or else Data'Length>262_144 or else Data'Last=Integer'Last then return; end if;
+      Pos:=Data'First;
       Value_Read(0,0,N); Space;
       if not Bad and then Pos=Data'Last+1 and then N=1 then Status:=OK; end if;
    end;
@@ -135,7 +192,9 @@ package body MC_JSON with SPARK_Mode is
       if N=0 or else N>D.Count then return; end if;
       if D.Nodes(N).Node_Kind=String_Node then String_Bytes(Data,D,N,B,Used,Status); if Status/=OK then return; end if;
       elsif D.Nodes(N).Node_Kind=Number_Node then
-         Used:=D.Nodes(N).Last-D.Nodes(N).First+1; if Used>20 then return; end if;
+         if D.Nodes(N).First not in Data'Range or else D.Nodes(N).Last not in D.Nodes(N).First .. Data'Last
+           or else D.Nodes(N).Last-D.Nodes(N).First>=20 then return; end if;
+         Used:=D.Nodes(N).Last-D.Nodes(N).First+1;
          B(1..Used):=Data(D.Nodes(N).First..D.Nodes(N).Last);
       else return; end if;
       declare Length : constant Natural := Used; S : String(1..Length); begin

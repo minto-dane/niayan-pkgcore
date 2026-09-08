@@ -64,7 +64,11 @@ package body MC_Control_Codec with SPARK_Mode is
       P := (others => <>); Status := Corrupt;
       if B'First /= 1 or else B'Length /= 320 then return; end if;
       if B (1..8) /= PM or else B (73) > 2 then return; end if;
-      for I of At_Pos loop if MC_Codec.U64 (B,I) > Wide (Counter'Last) then return; end if; end loop;
+      for J in At_Pos'Range loop
+         if MC_Codec.U64(B,At_Pos(J))>Wide(Counter'Last) then return; end if;
+         pragma Loop_Invariant
+           (for all K in At_Pos'First .. J => MC_Codec.U64(B,At_Pos(K))<=Wide(Counter'Last));
+      end loop;
       T.Scope := B (9..24); T.Contract := B (25..56);
       T.Expected_Revision := Counter (MC_Codec.U64 (B,57)); T.New_Trust_Epoch := Counter (MC_Codec.U64 (B,65));
       T.Desired := MC_Control.Mode'Val (B (73)); T.Boot_ID := B (81..96); T.Request_ID := B (97..112);
@@ -84,6 +88,7 @@ package body MC_Control_Codec with SPARK_Mode is
       T.Scope := B (9..24); T.Contract := B (25..56); T.Serial := Counter (MC_Codec.U64 (B,57));
       T.Count := Natural (B (65)); T.Tighten_Threshold := Natural (B (66)); T.Resume_Threshold := Natural (B (67));
       for I in 1..T.Count loop
+         pragma Loop_Invariant(T.Count=Natural(B(65)));
          O := 97 + (I-1)*96; if B (O+50) > 1 then return; end if;
          T.Keys (I).Public_Key := B (O..O+31); T.Keys (I).Principal := B (O+32..O+47);
          T.Keys (I).Domain := MC_Codec.U16 (B,O+48); T.Keys (I).Duty := MC_Control.Role'Val (B (O+50));

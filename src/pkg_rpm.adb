@@ -77,7 +77,7 @@ package body Pkg_RPM with SPARK_Mode is
                if Items > Store_Size - Offset then return; end if;
                Cursor := Offset; Found_Strings := 0;
                while Found_Strings < Items loop
-                  pragma Loop_Invariant (Cursor <= Store_Size);
+                  pragma Loop_Invariant (Cursor in Offset .. Store_Size);
                   if Cursor = Store_Size then return; end if;
                   if Scan_Budget = 0 then Status := Exhausted; return; end if;
                   Scan_Budget := Scan_Budget - 1;

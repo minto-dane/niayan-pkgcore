@@ -20,6 +20,7 @@ package body Pkg_Self_Repair with SPARK_Mode is
         or else C.Intrusion_Suspected or else C.Hardware_Fault_Suspected or else C.Pending_Change or else C.Maintenance
       then return; end if;
       for I in 1..Baseline.Count loop
+         pragma Loop_Invariant(Changed<=I-1 and then Blocked<=I-1);
          if not Observed(I).Known or else not Pkg_File_Plan.Valid(Observed(I).Actual) then Blocked:=Blocked+1;
          elsif not Pkg_File_Plan.Equal(Observed(I).Actual,Baseline.Items(I).Desired) then
             Changed:=Changed+1;
@@ -49,6 +50,7 @@ package body Pkg_Self_Repair with SPARK_Mode is
       Result.Epoch:=C.Epoch; Result.Fence:=C.Fence;
       Result.Package_Set:=Baseline.Package_Set; Result.Effect_Contract:=Baseline.Contract;
       for I in 1..Baseline.Count loop
+         pragma Loop_Invariant(Result.Count<=I-1);
          if not Pkg_File_Plan.Equal(Observed(I).Actual,Baseline.Items(I).Desired) then
             Result.Count:=Result.Count+1; Result.Changes(Result.Count).Path:=Baseline.Items(I).Path;
             Result.Changes(Result.Count).Domain:=Pkg_File_Plan.Packaged_Files;

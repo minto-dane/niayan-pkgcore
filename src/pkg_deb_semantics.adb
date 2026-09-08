@@ -5,6 +5,7 @@ package body Pkg_Deb_Semantics with SPARK_Mode is
       Satisfied : out Boolean; Status : out Outcome) is
       use Pkg_Deb_Versions;
       Order : Ordering;
+      subtype Version_Relation is Relation range Less_Than .. Greater_Than;
    begin
       Satisfied := False; Status := Invalid_Input;
       if MC_Text.Length (Need.Name) = 0 or else MC_Text.Length (Fact.Name) = 0 then return; end if;
@@ -20,8 +21,7 @@ package body Pkg_Deb_Semantics with SPARK_Mode is
       if Need.Operator = Any_Version then Satisfied := True; return; end if;
       if not Fact.Versioned then return; end if;
       Order := Compare (MC_Text.Image (Fact.Version), MC_Text.Image (Need.Version));
-      case Need.Operator is
-         when Any_Version => Satisfied := True;
+      case Version_Relation(Need.Operator) is
          when Less_Than => Satisfied := Order = Older;
          when At_Most => Satisfied := Order /= Newer;
          when Exactly => Satisfied := Order = Equal;

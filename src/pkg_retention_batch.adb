@@ -41,6 +41,7 @@ package body Pkg_Retention_Batch with SPARK_Mode is
          end if;
       end loop;
       for I in 1..Count loop
+         pragma Loop_Invariant(Remaining<=I-1);
          if not Requested (I) then
             MC_Backups.Chain (C,Count,I,Members,D,S);
             if S /= OK then return; end if;

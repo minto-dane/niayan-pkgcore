@@ -5,21 +5,19 @@ package body MC_Codec with SPARK_Mode is
    function U16 (Data : Bytes; At_Byte : Positive) return Natural is
      (Natural (Data (At_Byte)) * 256 + Natural (Data (At_Byte + 1)));
    function U32 (Data : Bytes; At_Byte : Positive) return Word is
-      V : Word := 0;
-   begin
-      for J in 0 .. 3 loop
-         V := Interfaces.Shift_Left (V, 8) or Word (Data (At_Byte + J));
-      end loop;
-      return V;
-   end U32;
+     (Interfaces.Shift_Left (Word (Data (At_Byte)), 24)
+      or Interfaces.Shift_Left (Word (Data (At_Byte + 1)), 16)
+      or Interfaces.Shift_Left (Word (Data (At_Byte + 2)), 8)
+      or Word (Data (At_Byte + 3)));
    function U64 (Data : Bytes; At_Byte : Positive) return Wide is
-      V : Wide := 0;
-   begin
-      for J in 0 .. 7 loop
-         V := Interfaces.Shift_Left (V, 8) or Wide (Data (At_Byte + J));
-      end loop;
-      return V;
-   end U64;
+     (Interfaces.Shift_Left (Wide (Data (At_Byte)), 56)
+      or Interfaces.Shift_Left (Wide (Data (At_Byte + 1)), 48)
+      or Interfaces.Shift_Left (Wide (Data (At_Byte + 2)), 40)
+      or Interfaces.Shift_Left (Wide (Data (At_Byte + 3)), 32)
+      or Interfaces.Shift_Left (Wide (Data (At_Byte + 4)), 24)
+      or Interfaces.Shift_Left (Wide (Data (At_Byte + 5)), 16)
+      or Interfaces.Shift_Left (Wide (Data (At_Byte + 6)), 8)
+      or Wide (Data (At_Byte + 7)));
    procedure Put16 (Data : in out Bytes; At_Byte : Positive; Value : Natural) is
    begin
       Data (At_Byte) := Byte (Value / 256);

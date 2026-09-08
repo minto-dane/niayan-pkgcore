@@ -18,7 +18,7 @@ package body MC_Paths with SPARK_Mode is
       return True;
    end Safe_Component;
    function Safe_Relative (Value : String) return Boolean is
-      Start : Positive := Value'First;
+      Start : Integer := Value'First;
    begin
       if Value'Length = 0 or else Value'Length > 4_096
         or else Value (Value'First) = '/' or else Value (Value'Last) = '/'

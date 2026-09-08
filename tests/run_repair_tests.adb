@@ -27,6 +27,18 @@ begin
    Expect(Pkg_Inventory.Fingerprint(M.all)=MC_SHA256.Hash(Data(1..Used)),"streamed-fingerprint-exact-encoding");
    Pkg_Inventory.Decode(Data(1..Used),Parsed.all,Status); Expect(Status=OK,"inventory-roundtrip-rebased-shape");
    Expect(Pkg_Inventory.Fingerprint(Parsed.all)=Pkg_Inventory.Fingerprint(M.all),"inventory-roundtrip-fingerprint");
+   declare
+      Exact : Bytes(Integer'Last-Used+1 .. Integer'Last);
+      Short : Bytes(1 .. Used-1);
+      Written : Natural;
+   begin
+      Pkg_Inventory.Encode(M.all,Exact,Written,Status);
+      Expect(Status=OK and then Written=Used and then Exact=Data(1..Used),"inventory-high-origin-exact-capacity");
+      Pkg_Inventory.Decode(Exact,Parsed.all,Status);
+      Expect(Status=OK and then Pkg_Inventory.Fingerprint(Parsed.all)=Pkg_Inventory.Fingerprint(M.all),"inventory-high-origin-roundtrip");
+      Pkg_Inventory.Encode(M.all,Short,Written,Status);
+      Expect(Status=Exhausted and then Written=0 and then (for all V of Short => V=0),"inventory-short-buffer-no-partial-output");
+   end;
    for I in 1..Used loop
       Data(I):=Data(I) xor 1; Pkg_Inventory.Decode(Data(1..Used),Parsed.all,Status);
       Expect(Status/=OK,"inventory-corruption"); Data(I):=Data(I) xor 1;

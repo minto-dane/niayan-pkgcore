@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "profile": "b486a9e18ceb6cc7c4ed23f915ac44f69d3a1cec2bfa27cf8cbbf6ddd8f6071c",
+  "profile": "d645bb10ef25fa57522106f154d5eeddad97e31f31cdf5720fab1e698dc40a5b",
   "hash_definition": "SHA256(ASCII MISSION-CORE-SHARED-SOURCE-PROFILE-v1\\n || exact contract-profile.source.sha256)",
   "not_a_signature": true,
   "not_formal_proof": true,

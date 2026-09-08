@@ -16,7 +16,8 @@ package body Resolver_Model with SPARK_Mode is
       and then B.Generation > 0);
    function Well_Formed (U : Universe) return Boolean is
    begin
-      if not Binding_Valid (U.Subject) or else U.Item_Count = 0 then return False; end if;
+      if not Binding_Valid (U.Subject) or else U.Item_Count = 0
+        or else not References_Valid(U) then return False; end if;
       for I in 1 .. U.Item_Count loop
          declare P : Item renames U.Items (I); begin
             if Is_Zero (P.Object_Hash) or else Is_Zero (P.Metadata_Hash)
@@ -29,30 +30,12 @@ package body Resolver_Model with SPARK_Mode is
             then return False; end if;
          end;
       end loop;
-      for I in 1 .. U.Node_Count loop
-         declare N : Expression_Node renames U.Nodes (I); begin
-            case N.Op is
-               when Constant_False | Constant_True =>
-                  if N.Subject /= 0 or else N.Left /= 0 or else N.Right /= 0 then return False; end if;
-               when Present =>
-                  if N.Subject = 0 or else N.Subject > U.Item_Count or else N.Left /= 0 or else N.Right /= 0
-                  then return False; end if;
-               when Not_Op =>
-                  if N.Subject /= 0 or else N.Left = 0 or else N.Left >= I or else N.Right /= 0
-                  then return False; end if;
-               when And_Op | Or_Op =>
-                  if N.Subject /= 0 or else N.Left = 0 or else N.Left >= I
-                    or else N.Right = 0 or else N.Right >= I then return False; end if;
-            end case;
-         end;
-      end loop;
       for I in 1 .. U.Rule_Count loop
-         if U.Rules (I).Predicate = 0 or else U.Rules (I).Predicate > U.Node_Count
-           or else Is_Zero (U.Rules (I).Origin) then return False; end if;
+         if Is_Zero (U.Rules (I).Origin) then return False; end if;
       end loop;
       for I in 1 .. U.Claim_Count loop
          declare C : Claim renames U.Claims (I); begin
-            if C.Owner = 0 or else C.Owner > U.Item_Count or else Is_Zero (C.Resource)
+            if Is_Zero (C.Resource)
               or else Is_Zero (C.Content) or else Is_Zero (C.Attributes) then return False; end if;
             if I > 1 then
                if Less (C.Resource, U.Claims (I - 1).Resource) then return False; end if;

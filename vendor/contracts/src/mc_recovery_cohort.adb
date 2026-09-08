@@ -6,6 +6,7 @@ package body MC_Recovery_Cohort with SPARK_Mode is
    begin
       if Is_Zero (Expected) or else W'Length > 32 or else Needed < 2 then return False; end if;
       for I in W'Range loop
+         pragma Loop_Invariant(Count=I-W'First);
          if not W (I).Authenticated or else not W (I).Current or else
             W (I).Anchor_Hash /= Expected or else Is_Zero (W (I).Principal) or else
             Is_Zero (W (I).Domain_ID) then return False; end if;

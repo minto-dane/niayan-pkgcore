@@ -1,5 +1,7 @@
 -- SPDX-License-Identifier: MIT
 package body Pkg_Transactions with SPARK_Mode is
+   subtype Authorized_Command is Command range Validate_Plan..Record_Restored
+     with Static_Predicate => Authorized_Command /= Begin_Reconcile;
    function Well_Formed (T : Transaction) return Boolean is
      (not Is_Zero (T.ID) and then not Is_Zero (T.Plan_Digest)
       and then T.Membership_Epoch > 0 and then T.Fence_Token > 0);
@@ -32,7 +34,7 @@ package body Pkg_Transactions with SPARK_Mode is
          -- Logical quarantine only. Stopping a cluster-owned service requires its owner.
          Next_Phase := Quarantined; Next_Action := Record_Quarantine; Permitted := True;
       elsif Write_Authorized (T, E) then
-         case C is
+         case Authorized_Command(C) is
             when Validate_Plan =>
                Permitted := T.Current = Empty and then E.Plan_Checked
                  and then E.Observed_Generation = T.Base_Generation;
@@ -82,7 +84,6 @@ package body Pkg_Transactions with SPARK_Mode is
                Permitted := T.Current = Restoring and then E.Before_Matches
                  and then E.Config_Valid and then E.Intent_Durable and then E.No_Unknown_Effects;
                Next_Phase := Restored;
-            when Begin_Reconcile | Mark_Quarantined => null;
          end case;
       end if;
       if not Permitted then return; end if;

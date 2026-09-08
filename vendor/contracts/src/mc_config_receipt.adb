@@ -37,7 +37,9 @@ package body MC_Config_Receipt with SPARK_Mode is
    end Encode;
    procedure Decode(B : Bytes;R : out Receipt;Status : out Outcome) is
       W,Canonical : Wire;T : Receipt;N : Wide;Local : Outcome;
-      function Count(P : Positive) return Counter is (Counter(MC_Codec.U64(W,P)));
+      function Count(P : Positive) return Counter is (Counter(MC_Codec.U64(W,P)))
+        with Pre => P in W'Range and then W'Last-P>=7
+          and then MC_Codec.U64(W,P)<=Wide(Counter'Last);
    begin
       R:=(others=><>);Status:=Invalid_Input;if B'Length/=Wire_Size then return;end if;W:=B;
       if W(1..8)/=Magic or else W(457) not in 1..4 or else W(458)>63 then return;end if;

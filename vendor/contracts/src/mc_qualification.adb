@@ -49,8 +49,8 @@ package body MC_Qualification with SPARK_Mode is
    end Decode;
    function Evaluate (P : Policy; C : Claims; Verified : Signature_Results;
       Now : Counter) return Assessment is
-      A : Assessment; Build, Review, Approve : Natural := 0;
-      Who : Natural;
+      A : Assessment; Build, Review, Approve : Natural range 0 .. Authority_List'Last := 0;
+      Who : Natural range 0 .. Authority_List'Last;
    begin
       if not Valid (P) then return A; end if;
       A.Eligible := True;

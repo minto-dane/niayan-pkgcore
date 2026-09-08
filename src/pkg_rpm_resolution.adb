@@ -3,6 +3,8 @@ with Pkg_EVR; with Pkg_Versions; with Resolver_Builder;
 package body Pkg_RPM_Resolution with SPARK_Mode is
    use Pkg_Dependency; use type Pkg_Versions.Ordering;
    use type Resolver_Model.Node_ID; use type Resolver_Model.Item_ID;
+   subtype Version_Relation is Relation range LT..GT;
+   subtype Boolean_Operator is Operator range And_Op..Unless_Op;
    type Matching is array (Positive range 1 .. Resolver_Model.Max_Items) of Boolean with Pack;
    type Match_Table is array (Positive range 1 .. Pkg_Dependency.Max_Nodes) of Matching;
    procedure Spend (Fuel : in out Natural; Status : in out Outcome) is
@@ -30,7 +32,9 @@ package body Pkg_RPM_Resolution with SPARK_Mode is
       return True;
    end Supported;
    procedure Build_Matches (E : Expression; Facts : Providers; Item_Count : Resolver_Model.Item_ID;
-      T : out Match_Table; Status : out Outcome; Fuel : in out Natural) is
+      T : out Match_Table; Status : out Outcome; Fuel : in out Natural) with
+     Post => (if Status=OK then Well_Formed(E))
+   is
       AV, BV : Pkg_EVR.EVR; Ordering : Pkg_Versions.Ordering; Hit : Boolean;
    begin
       T := (others => (others => False)); Status := Invalid_Input;
@@ -39,13 +43,16 @@ package body Pkg_RPM_Resolution with SPARK_Mode is
       -- Validate every fact, not only selected or matching facts. Dormant
       -- malformed facts must not become a second semantics after a plan change.
       Status := OK;
-      for F of Facts loop
+      for K in Facts'Range loop
+         pragma Loop_Invariant(for all J in Facts'First..K-1 => Facts(J).Owner in 1..Item_Count);
+         declare F : Provider renames Facts(K); begin
          Spend (Fuel, Status); if Status /= OK then return; end if;
          if F.Owner = 0 or else F.Owner > Item_Count or else MC_Text.Length (F.Name) = 0 then Status := Invalid_Input; return; end if;
          if F.Versioned then
             Pkg_EVR.Parse (MC_Text.Image (F.Version), AV, Status); if Status /= OK then return; end if;
             if MC_Text.Length(AV.Version)=0 then Status:=Invalid_Input; return; end if;
          elsif MC_Text.Length (F.Version) /= 0 then Status := Invalid_Input; return; end if;
+         end;
       end loop;
       Status := OK;
       for I in 1 .. E.Count loop
@@ -59,13 +66,12 @@ package body Pkg_RPM_Resolution with SPARK_Mode is
                      if N.Comparison /= Any_Version and then F.Versioned then
                         Pkg_EVR.Parse (MC_Text.Image (F.Version), AV, Status); if Status /= OK then return; end if;
                         Ordering := Pkg_EVR.Compare (AV, BV, Dependency_Match => True);
-                        case N.Comparison is
+                        case Version_Relation(N.Comparison) is
                            when LT => Hit := Ordering = Pkg_Versions.Older;
                            when LE => Hit := Ordering /= Pkg_Versions.Newer;
                            when EQ => Hit := Ordering = Pkg_Versions.Equal;
                            when GE => Hit := Ordering /= Pkg_Versions.Older;
                            when GT => Hit := Ordering = Pkg_Versions.Newer;
-                           when Any_Version => Hit := True;
                         end case;
                      end if;
                      T (I) (F.Owner) := T (I) (F.Owner) or Hit;
@@ -74,7 +80,7 @@ package body Pkg_RPM_Resolution with SPARK_Mode is
             else
                for J in 1 .. Item_Count loop
                   Spend (Fuel, Status); if Status /= OK then return; end if;
-                  case N.Op is
+                  case Boolean_Operator(N.Op) is
                      when And_Op | With_Op => T (I) (J) := T (N.Left) (J) and T (N.Right) (J);
                      when Or_Op => T (I) (J) := T (N.Left) (J) or T (N.Right) (J);
                      when Without_Op => T (I) (J) := T (N.Left) (J) and not T (N.Right) (J);
@@ -84,7 +90,6 @@ package body Pkg_RPM_Resolution with SPARK_Mode is
                      when Unless_Op =>
                         T (I) (J) := (if not T (N.Right) (J) then T (N.Left) (J)
                           elsif N.Alternative = 0 then True else T (N.Alternative) (J));
-                     when Capability => null;
                   end case;
                end loop;
             end if;

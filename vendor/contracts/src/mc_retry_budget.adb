@@ -6,17 +6,11 @@ package body MC_Retry_Budget with SPARK_Mode is
       and then P.Initial_Backoff_Ms <= P.Maximum_Backoff_Ms
       and then P.Maximum_Backoff_Ms <= P.Window_Ms);
    function Valid (S : State) return Boolean is
-   begin
-      if S.Boot_ID = Zero_Identity or else S.Total < S.Count
-        or else S.Total < S.Consecutive then return False; end if;
-      for I in Slot loop
-         if I <= S.Count then
-            if S.Attempts(I) > S.Last_Now then return False; end if;
-            if I > 1 and then S.Attempts(I) < S.Attempts(I-1) then return False; end if;
-         elsif S.Attempts(I) /= 0 then return False; end if;
-      end loop;
-      return True;
-   end Valid;
+     (S.Boot_ID/=Zero_Identity and then S.Total>=S.Count and then S.Total>=S.Consecutive
+      and then (for all I in Slot =>
+        (if I<=S.Count then S.Attempts(I)<=S.Last_Now
+          and then (I=1 or else S.Attempts(I)>=S.Attempts(I-1))
+         else S.Attempts(I)=0)));
    function Backoff (P : Policy; Consecutive : Natural) return Counter is
       Delay_Ms : Counter := P.Initial_Backoff_Ms;
    begin
@@ -46,6 +40,11 @@ package body MC_Retry_Budget with SPARK_Mode is
          if Now - S.Attempts(I) < P.Window_Ms then
             Kept := Kept + 1; Times(Kept) := S.Attempts(I);
          end if;
+         pragma Loop_Invariant(Kept<=I);
+         pragma Loop_Invariant(for all J in 1 .. Kept => Times(J)<=S.Attempts(I));
+         pragma Loop_Invariant(for all J in 1 .. Kept => Times(J)<=Now);
+         pragma Loop_Invariant(for all J in 2 .. Kept => Times(J)>=Times(J-1));
+         pragma Loop_Invariant(for all J in Kept+1 .. Capacity => Times(J)=0);
       end loop;
       if Kept >= P.Maximum_In_Window then Status := Denied; return; end if;
       Delay_Ms := Backoff(P, S.Consecutive + 1);
@@ -73,7 +72,10 @@ package body MC_Retry_Budget with SPARK_Mode is
         or else New_Boot = S.Boot_ID then return; end if;
       if Now >= Counter'Last - P.Maximum_Backoff_Ms then Status := Exhausted; return; end if;
       S.Boot_ID := New_Boot; S.Last_Now := Now;
-      for I in 1 .. S.Count loop S.Attempts(I) := Now; end loop;
+      for I in 1 .. S.Count loop
+         S.Attempts(I) := Now;
+         pragma Loop_Invariant(for all J in 1..I => S.Attempts(J)=Now);
+      end loop;
       S.Not_Before := Now + P.Maximum_Backoff_Ms;
       Status := OK;
    end Rebind_Boot;

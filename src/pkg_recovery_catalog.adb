@@ -24,6 +24,7 @@ package body Pkg_Recovery_Catalog with SPARK_Mode is
       Selected:=0; Status:=Invalid_Input;
       if not Valid_Set(Items,Count) then return; end if;
       for I in 1..Count loop
+         pragma Loop_Invariant(Selected in 0..I-1);
          if Admissible(P,Items(I)) and then not Items(I).Unresolved_Intent
            and then (Selected=0 or else Items(I).Generation>Items(Selected).Generation)
          then Selected:=I; end if;
@@ -38,6 +39,7 @@ package body Pkg_Recovery_Catalog with SPARK_Mode is
         or else Items(Index).Unresolved_Intent or else Items(Index).Pinned_By_Operator
         or else Items(Index).Created_At>P.Now or else P.Now-Items(Index).Created_At<P.Minimum_Age then return False; end if;
       for I in 1..Count loop
+         pragma Loop_Invariant(Remaining<=I-1);
          if I/=Index and then Admissible(P,Items(I)) and then not Items(I).Unresolved_Intent
          then Remaining:=Remaining+1; end if;
       end loop;
