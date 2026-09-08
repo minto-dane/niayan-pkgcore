@@ -27,6 +27,7 @@ package Pkg_File_Plan with SPARK_Mode, Pure is
       Count : Natural range 0..Max_Changes := 0;
       Changes : Change_Array;
    end record;
+   procedure Clear(P : out Plan) with Global=>null, Post=>P.Count=0;
    Shape_Size : constant := 128;
    Header_Size : constant := 192;
    subtype Encoded_Shape is Bytes(1..Shape_Size);

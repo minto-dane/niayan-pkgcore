@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT
 package body Pkg_Exposure_Policy with SPARK_Mode is
    function Evaluate (P : Policy; F : Facts) return Status is
-      Limit : Counter := 0;
+      Limit : Counter;
    begin
       if not Pkg_Advisory.Valid(F.Advisory) or else F.First_Observed_At=0 or else F.Now<F.First_Observed_At
         or else F.Advisory.Withdrawn or else F.Advisory.Known_Bad then return Blocked; end if;

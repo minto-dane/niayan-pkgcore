@@ -5,6 +5,12 @@ with MC_Maintenance; with Pkg_Holds; with Pkg_Acceptance; with Pkg_Incorporation
 with Pkg_Advisory; with Pkg_Provenance; with Pkg_Activation;
 with Pkg_Exposure_Policy; with Pkg_Repository_Trust; with Pkg_Rollback_Contract; with Pkg_Maintenance_Bundle;
 procedure Run_Enterprise_Pkg_Tests with SPARK_Mode => Off is
+   use type pkg_acceptance.Phase;
+   use type pkg_activation.Runtime_State;
+   use type pkg_advisory.Decision;
+   use type pkg_exposure_policy.Status;
+   use type pkg_repository_trust.Decision;
+   use type pkg_rollback_contract.Decision;
    C : Pkg_Holds.Catalog;
    S : Pkg_Acceptance.State; E : Pkg_Acceptance.Evidence; O : Outcome;
    I : Pkg_Incorporation.Incorporation; Inv : Pkg_Incorporation.Inventory := (others=><>);
@@ -27,7 +33,7 @@ begin
    for N in 1..3 loop E.Expected_Revision:=S.Revision; E.Now:=100+Counter(N)*10; Pkg_Acceptance.Step(S,Pkg_Acceptance.Observe,E,O); Expect(O=OK,"trial-health-sample"); end loop;
    Expect(S.Current=Pkg_Acceptance.Verified,"trial-becomes-verified");
    E.Expected_Revision:=S.Revision; E.Now:=140; E.Acceptance_Authorized:=True;
-   Pkg_Acceptance.Step(S,Pkg_Acceptance.Accept,E,O); Expect(O=OK and then S.Current=Pkg_Acceptance.Accepted,"apply-separate-from-accept");
+   Pkg_Acceptance.Step(S,Pkg_Acceptance.Accept_Change,E,O); Expect(O=OK and then S.Current=Pkg_Acceptance.Accepted,"apply-separate-from-accept");
    E.Expected_Revision:=S.Revision; E.Now:=150; E.Commit_Authorized:=True;
    Pkg_Acceptance.Step(S,Pkg_Acceptance.Commit,E,O); Expect(O=OK and then S.Current=Pkg_Acceptance.Committed,"accept-separate-from-commit");
 
@@ -39,12 +45,12 @@ begin
    Expect(Pkg_Incorporation.Satisfied(I,Inv,2),"incorporation-exact-composition");
    Inv(2).EVR:=(others=>99); Expect(not Pkg_Incorporation.Satisfied(I,Inv,2),"incorporation-rejects-substitution");
 
-   A.ID:=(others=>1); A.Package:=(others=>2); A.Fixed_Build:=(others=>3); A.Metadata:=(others=>4); A.Published_At:=100; A.Security_Epoch:=5;
+   A.ID:=(others=>1); A.Package_ID:=(others=>2); A.Fixed_Build:=(others=>3); A.Metadata:=(others=>4); A.Published_At:=100; A.Security_Epoch:=5;
    A.Level:=Pkg_Advisory.Critical; A.Exploited:=True;
    Expect(Pkg_Advisory.Decide(A,(others=>9),5)=Pkg_Advisory.Emergency_Change,"exploited-critical-expedites");
    A.Known_Bad:=True; Expect(Pkg_Advisory.Decide(A,(others=>9),5)=Pkg_Advisory.Block_Installation,"known-bad-blocked");
 
-   P.Package:=(others=>1); P.Source:=(others=>2); P.Build_Recipe:=(others=>3); P.Builder:=(others=>4); P.Repository:=(others=>5);
+   P.Package_ID:=(others=>1); P.Source:=(others=>2); P.Build_Recipe:=(others=>3); P.Builder:=(others=>4); P.Repository:=(others=>5);
    P.Receipt:=(others=>6); P.Repository_Epoch:=10; P.Build_Epoch:=10; P.Assurance:=Pkg_Provenance.Transparency_Bound;
    P.Package_Signature:=True; P.Metadata_Signature:=True; P.Receipt_Verified:=True; P.Builder_Allowed:=True; P.Source_Allowed:=True; P.Recipe_Allowed:=True;
    Expect(Pkg_Provenance.Admissible(P,Pkg_Provenance.Transparency_Bound,10),"provenance-admission");
@@ -70,9 +76,9 @@ begin
    Expect(Pkg_Rollback_Contract.Evaluate(RC)=Pkg_Rollback_Contract.Restore_Rollback,"irreversible-data-change-needs-tested-restore");
 
    MB.ID:=(others=>1); MB.Repository:=(others=>2); MB.Policy:=(others=>3); MB.Baseline:=(others=>4); MB.Epoch:=10; MB.Security_Epoch:=11; MB.Count:=2; MB.Signed:=True; MB.Cumulative:=True;
-   MB.Content(1):=(Package=>(others=>10),Required_Build=>(others=>11),Advisory=>(others=>12),Required=>True);
-   MB.Content(2):=(Package=>(others=>20),Required_Build=>(others=>21),Advisory=>(others=>22),Required=>True);
-   MI(1):=(Package=>MB.Content(1).Package,Build=>MB.Content(1).Required_Build); MI(2):=(Package=>MB.Content(2).Package,Build=>MB.Content(2).Required_Build);
+   MB.Content(1):=(Package_ID=>(others=>10),Required_Build=>(others=>11),Advisory=>(others=>12),Required=>True);
+   MB.Content(2):=(Package_ID=>(others=>20),Required_Build=>(others=>21),Advisory=>(others=>22),Required=>True);
+   MI(1):=(Package_ID=>MB.Content(1).Package_ID,Build=>MB.Content(1).Required_Build); MI(2):=(Package_ID=>MB.Content(2).Package_ID,Build=>MB.Content(2).Required_Build);
    Expect(Pkg_Maintenance_Bundle.Valid(MB) and then Pkg_Maintenance_Bundle.Satisfied(MB,MI,2),"cumulative-maintenance-bundle-exactly-satisfied");
    MI(2).Build:=(others=>99); Expect(not Pkg_Maintenance_Bundle.Satisfied(MB,MI,2),"maintenance-bundle-missing-build-visible");
    Report;

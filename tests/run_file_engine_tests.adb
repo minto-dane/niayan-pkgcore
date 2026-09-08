@@ -23,7 +23,8 @@ procedure Run_File_Engine_Tests with SPARK_Mode=>Off is
    use type MC_FS.Entry_Kind;
    use type Pkg_Recovery_Audit.Finding;
    C : Engine.Context; Store : MC_Store.Store; S : Outcome; D1,D2,Attrs,Receipt,Plan_Digest : Digest;
-   P : Pkg_File_Plan.Plan; Data : Bytes(1..16_384); Used : Natural; Actual : Engine.Actual_Image;
+   type Plan_Access is access Pkg_File_Plan.Plan;
+   P : constant Plan_Access := new Pkg_File_Plan.Plan; Data : Bytes(1..16_384); Used : Natural; Actual : Engine.Actual_Image;
    Audit : Pkg_Recovery_Audit.Report;
    procedure Need(Label_Text : String) is begin Expect(S=OK,Label_Text & Outcome'Image(S)); end;
    procedure Start is
@@ -43,7 +44,7 @@ begin
    MC_Text.Set(P.Changes(1).Path,"usr/payload",S); Need("path");
    P.Changes(1).After:=(Node_Kind=>Pkg_File_Plan.Regular,Mode=>8#644#,UID=>Word(Euid),GID=>Word(Egid),
       Size=>3,Content=>D1,Xattrs=>Attrs,others=><>);
-   Pkg_File_Plan.Encode(P,Data,Used,S); Need("encode"); Plan_Digest:=MC_SHA256.Hash(Data(1..Used));
+   Pkg_File_Plan.Encode(P.all,Data,Used,S); Need("encode"); Plan_Digest:=MC_SHA256.Hash(Data(1..Used));
    Start; Engine.Prepare(C,Data(1..Used),Plan_Digest,S); Need("prepare");
    Engine.Close(C);
    -- A missing lock inode is not a license to create an independent new lock.
@@ -88,7 +89,7 @@ begin
    Engine.Reconcile_Terminal(C,S); Need("lost-response-reconcile"); Engine.Close(C);
    P.Transaction_ID:=(others=>4); P.Base_Generation:=1; P.Target_Generation:=2;
    P.Changes(1).Before:=P.Changes(1).After; P.Changes(1).After.Content:=D2;
-   Pkg_File_Plan.Encode(P,Data,Used,S); Need("encode-second"); Plan_Digest:=MC_SHA256.Hash(Data(1..Used));
+   Pkg_File_Plan.Encode(P.all,Data,Used,S); Need("encode-second"); Plan_Digest:=MC_SHA256.Hash(Data(1..Used));
    Start; Engine.Prepare(C,Data(1..Used),Plan_Digest,S); Need("prepare-second"); Engine.Apply(C,S); Need("apply-second");
    Engine.Close(C); Start; Engine.Resume(C,S); Need("reopen-before-restore");
    Engine.Restore(C,Receipt,S); Need("restore-real-preimage");

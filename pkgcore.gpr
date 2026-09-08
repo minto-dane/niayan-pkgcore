@@ -6,7 +6,7 @@ project Pkgcore is
    for Exec_Dir use "build/bin";
    for Main use ("pkg_recoveryctl.adb", "pkgctl.adb", "pkg_worker.adb", "pkg_scrubctl.adb");
    package Compiler is
-      for Default_Switches ("Ada") use ("-gnat2022", "-gnata", "-gnato", "-gnatVa", "-gnatwe", "-fstack-protector-strong", "-fPIE", "-g", "-O1");
+      for Default_Switches ("Ada") use ("-gnat2022", "-gnata", "-gnato", "-gnatVa", "-gnatwe", "-fstack-protector-strong", "-fPIE", "-ffile-prefix-map=" & Pkgcore'Project_Dir & "=/usr/src/niaos/pkgcore/", "-g", "-gno-record-gcc-switches", "-O1");
    end Compiler;
    package Linker is
       for Default_Switches ("Ada") use

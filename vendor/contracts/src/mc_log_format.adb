@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT
 with MC_Codec; with MC_SHA256;
 package body MC_Log_Format with SPARK_Mode is
+   use type MC_Types.Byte;
    use type Wide;
    Magic : constant Bytes := (16#4D#,16#43#,16#4C#,16#4F#,16#47#,16#30#,16#30#,16#32#);
    function Encode(E : Log_Entry) return Frame is

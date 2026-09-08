@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT
 with MC_Codec; with MC_SHA256;
 package body Pkg_Root_State with SPARK_Mode is
+   use type MC_Types.Byte;
    use type Wide;
    Magic : constant Bytes := (16#4D#,16#43#,16#52#,16#4F#,16#4F#,16#54#,16#30#,16#32#);
    function Encode(S : State) return Frame is

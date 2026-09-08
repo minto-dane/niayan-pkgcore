@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: MIT
 package body Pkg_Activation with SPARK_Mode is
+   use type Pkg_Advisory.Activation;
    function Evaluate (F : Facts) return Runtime_State is
    begin
       if F.Installed = Zero_Digest or else F.Accepted = Zero_Digest then return Activation_Failed; end if;

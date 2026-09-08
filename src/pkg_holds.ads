@@ -11,7 +11,7 @@ package Pkg_Holds with SPARK_Mode, Pure is
       Count : Natural range 0 .. Max_Holds := 0;
       Items : Hold_Array;
    end record;
-   type Operation is (Apply, Accept, Commit);
+   type Operation is (Apply, Accept_Change, Commit);
    function Valid (C : Catalog) return Boolean with Global => null;
    function Blocked (C : Catalog; Subject : Digest; Op : Operation; Now : Counter) return Boolean
      with Global => null;

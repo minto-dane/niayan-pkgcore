@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT
 with MC_Types; use MC_Types; with MC_Backups;
 package Pkg_Retention_Batch with SPARK_Mode, Pure is
+   use type mc_backups.Selection;
    type Policy is record
       Recovery : MC_Backups.Policy;
       Minimum_Restore_Points : Positive range 1 .. MC_Backups.Capacity := 2;

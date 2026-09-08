@@ -6,7 +6,7 @@ package body Pkg_Self_Repair with SPARK_Mode is
       Changed, Blocked : out Natural; Status : out Outcome) is
       Needed : Counter:=0;
    begin
-      Result:=(others=><>); Changed:=0; Blocked:=0; Status:=Denied;
+      Pkg_File_Plan.Clear(Result); Changed:=0; Blocked:=0; Status:=Denied;
       if not Pkg_Inventory.Valid(Baseline) or else P.Root_ID=Zero_Identity
         or else P.Inventory_Digest=Zero_Digest or else P.Maximum_Age_Ms=0 or else P.Maximum_Age_Ms>60_000
         or else P.Maximum_Bytes=0 or else P.Maximum_Bytes>8*1_024*1_024*1_024
@@ -56,7 +56,7 @@ package body Pkg_Self_Repair with SPARK_Mode is
             Result.Changes(Result.Count).After:=Baseline.Items(I).Desired;
          end if;
       end loop;
-      if not Pkg_File_Plan.Layout_Valid(Result) then Result:=(others=><>); Status:=Invalid_Input; return; end if;
+      if not Pkg_File_Plan.Layout_Valid(Result) then Pkg_File_Plan.Clear(Result); Status:=Invalid_Input; return; end if;
       Status:=OK;
    end Build;
 end Pkg_Self_Repair;

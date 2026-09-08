@@ -50,7 +50,6 @@ package body MC_Command with SPARK_Mode => Off is
       Output_Open, Child_Exited, Child_Reaped, Forced : Boolean:=False;
       Cleanup_Complete : Boolean:=True;
       Slash : Natural:=0;
-      pragma Unreferenced(Ignored);
       procedure Close_FD(F : in out int) is
       begin if F>=0 then Ignored:=MC_Posix.Close(F); F:=-1; end if; end;
       procedure Cleanup is

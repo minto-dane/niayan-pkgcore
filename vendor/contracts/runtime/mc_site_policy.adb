@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT
 with MC_Codec; with MC_SHA256; with MC_Atomic; with MC_Posix; with MC_Protocol;
 package body MC_Site_Policy with SPARK_Mode => Off is
+   use type MC_Types.Byte;
    use type Wide; use type Word; use type MC_FS.Entry_Kind;
    Magic : constant Bytes:=(16#4D#,16#43#,16#50#,16#4F#,16#4C#,16#30#,16#30#,16#32#);
    function Encode(P : Policy) return Frame is

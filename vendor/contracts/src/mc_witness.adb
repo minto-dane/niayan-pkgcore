@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT
 with MC_Codec;
 package body MC_Witness with SPARK_Mode is
+   use type MC_Types.Byte;
    use type Wide;
    Magic : constant Bytes:=(16#4D#,16#43#,16#57#,16#49#,16#54#,16#30#,16#30#,16#32#);
    function Encode(S : Statement) return Frame is B : Frame:=(others=>0); begin

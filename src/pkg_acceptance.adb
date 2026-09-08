@@ -21,7 +21,7 @@ package body Pkg_Acceptance with SPARK_Mode is
                N.Healthy_Samples := Natural'Min (255, N.Healthy_Samples + 1);
                if N.Healthy_Samples >= 3 and then E.Now - S.Applied_At >= E.Minimum_Trial_Ms then N.Current := Verified; end if;
             else N.Healthy_Samples := 0; N.Current := Trial; end if;
-         when Accept =>
+         when Accept_Change =>
             if S.Current /= Verified or else not Healthy or else not E.Acceptance_Authorized
               or else not E.Recovery_Pinned or else E.Now - S.Applied_At < E.Minimum_Trial_Ms
             then return; end if;

@@ -14,6 +14,7 @@ package body MC_HTTPS with SPARK_Mode => Off is
    type Writer_Access is access all MC_Store.Writer;
    type Transfer is record W : Writer_Access; Deadline : Counter; Status : Outcome:=OK; end record;
    package Access_Transfer is new System.Address_To_Access_Conversions(Transfer);
+   use type Access_Transfer.Object_Pointer;
    function Receive(Data : System.Address; Size, Count : size_t; User : System.Address) return size_t
      with Convention=>C;
    function Receive(Data : System.Address; Size, Count : size_t; User : System.Address) return size_t is

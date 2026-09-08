@@ -28,7 +28,7 @@ package body Pkg_Artifact_Grant with SPARK_Mode is
       G.Repository:=F(9..24); G.Object:=F(25..56); G.Snapshot:=F(57..88); G.Contract:=F(89..120);
       G.Revision:=Counter(MC_Codec.U64(F,121)); G.Issued:=Counter(MC_Codec.U64(F,129));
       G.Expires:=Counter(MC_Codec.U64(F,137)); G.Size:=Counter(MC_Codec.U64(F,145));
-      declare U : String(1..N); begin
+      declare Text_Length : constant Natural := N; U : String(1..Text_Length); begin
          for I in U'Range loop U(I):=Character'Val(F(160+I)); end loop;
          MC_Text.Set(G.URL,U,Status); if Status/=OK then return; end if;
       end;

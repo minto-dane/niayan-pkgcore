@@ -44,16 +44,19 @@ package body Resolver_Proof with SPARK_Mode is
    end Append;
    procedure Initialize (F : Resolver_CNF.Formula; D : out Database;
       Status : out Outcome; Fuel : in out Natural) is
-      Input, N : Literals (1 .. 3) := (others => 0); Count : Natural; Taut : Boolean;
+      Input : Literals (1 .. 3) := (others=>0); N : Literals (1 .. 3); Count : Natural; Taut : Boolean;
    begin
       D.Used := 0; D.End_Data := 0; D.Maximum_ID := 0; D.Empty_Derived := False;
-      D.Initialized := False; D.Variables := F.Variables; Status := Invalid_Input;
-      -- Entries and arena outside Used/End_Data are inaccessible, including on
-      -- failed initialization. No uninitialized storage is a live clause.
+      D.Initialized := False; D.Variables := F.Variables;
+      -- Initialize the OUT object in place, including inactive storage, without
+      -- a database-sized aggregate temporary on the caller's stack.
+      for I in D.Clauses'Range loop D.Clauses (I) := (others => <>); end loop;
+      for I in D.Data'Range loop D.Data (I) := 0; end loop;
       for I in 1 .. F.Count loop
          for J in 1 .. F.Clauses (I).Count loop Input (J) := F.Clauses (I).Terms (J); end loop;
          Normalize (Input (1 .. F.Clauses (I).Count), F.Variables, N, Count, Taut, Status, Fuel);
          if Status /= OK then return; end if;
+         if Taut and then Count=0 then Status:=Invalid_Input; return; end if;
          Append (D, Counter (I), N (1 .. Count), Status); if Status /= OK then return; end if;
       end loop;
       D.Initialized := True; Status := OK;
@@ -101,9 +104,10 @@ package body Resolver_Proof with SPARK_Mode is
    end RUP;
    procedure Add (D : in out Database; ID : Counter; Clause : Literals;
       Status : out Outcome; Fuel : in out Natural) is
-      N, Resolvent : Literals (1 .. 2 * Max_Variables) := (others => 0);
+      N : Literals (1 .. 2 * Max_Variables);
+      Resolvent : Literals (1 .. 2 * Max_Variables) := (others=>0);
       Count, RC : Natural; Taut, Yes, Found, RT : Boolean; Pivot : Literal;
-      Seen : Marks := (others => 0);
+      Seen : Marks;
       procedure Insert (L : Literal) is
          V : constant Positive := abs L;
       begin

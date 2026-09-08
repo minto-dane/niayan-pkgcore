@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT
 with MC_Types; use MC_Types;
 package MC_Codec with SPARK_Mode, Pure is
+   use type MC_Types.Wide; use type MC_Types.Word;
    function U16 (Data : Bytes; At_Byte : Positive) return Natural
      with Pre => At_Byte in Data'Range and then Data'Last - At_Byte >= 1,
           Post => U16'Result <= 65_535, Global => null;

@@ -4,7 +4,7 @@ package Pkg_Advisory with SPARK_Mode, Pure is
    type Severity is (None, Low, Moderate, Important, Critical);
    type Activation is (Immediate, New_Process, Service_Restart, Relogin, Node_Reboot, Offline_Migration);
    type Advisory is record
-      ID, Package, Fixed_Build, Metadata : Digest := Zero_Digest;
+      ID, Package_ID, Fixed_Build, Metadata : Digest := Zero_Digest;
       Published_At, Security_Epoch : Counter := 0;
       Level : Severity := None;
       Activate : Activation := Immediate;

@@ -3,9 +3,9 @@ with Pkg_EVR; with Pkg_Versions;
 package body Pkg_Dependency with SPARK_Mode is
    procedure Parse(Text : String; E : out Expression; Status : out Outcome) is
       P : Natural:=Text'First;
-      Failed : Boolean:=False;
-      function Word_At return String is
-         First : constant Natural:=P; Depth : Natural:=0;
+      Failed : Boolean:=False; Parsed_Root : Node_ID;
+      procedure Read_Word(Word : out MC_Text.Value) is
+         First : constant Natural:=P; Depth : Natural:=0; Local_Status : Outcome;
       begin
          while P<=Text'Last loop
             if Text(P)=' ' then exit;
@@ -15,76 +15,85 @@ package body Pkg_Dependency with SPARK_Mode is
             P:=P+1;
          end loop;
          if Depth/=0 then Failed:=True; end if;
-         return Text(First..P-1);
-      end Word_At;
+         MC_Text.Set(Word,Text(First..P-1),Local_Status);
+         if Local_Status/=OK then Failed:=True; end if;
+      end Read_Word;
       procedure Spaces is begin while P<=Text'Last and then Text(P)=' ' loop P:=P+1; end loop; end;
-      function Add(N : Node) return Node_ID is
+      procedure Add(N : Node; Result : out Node_ID) is
       begin
-         if E.Count=Max_Nodes then Failed:=True; return 0; end if;
-         E.Count:=E.Count+1; E.Nodes(E.Count):=N; return E.Count;
+         Result:=0;
+         if E.Count=Max_Nodes then Failed:=True; return; end if;
+         E.Count:=E.Count+1; E.Nodes(E.Count):=N; Result:=E.Count;
       end;
-      function Operand(Depth : Natural) return Node_ID;
-      function Operand(Depth : Natural) return Node_ID is
-         L,R,A : Node_ID:=0; N : Node; Op : Operator; S : Outcome; First_Op : Operator:=Capability;
+      procedure Operand(Depth : Natural; Result : out Node_ID);
+      procedure Operand(Depth : Natural; Result : out Node_ID) is
+         L,R,A : Node_ID; Word : MC_Text.Value; N : Node; Op : Operator; S : Outcome; First_Op : Operator:=Capability;
       begin
-         if Depth>32 then Failed:=True; return 0; end if;
-         Spaces; if P>Text'Last then Failed:=True; return 0; end if;
+         Result:=0;
+         if Depth>32 then Failed:=True; return; end if;
+         Spaces; if P>Text'Last then Failed:=True; return; end if;
          if Text(P)='(' then
-            P:=P+1; L:=Operand(Depth+1); if Failed then return 0; end if;
+            P:=P+1; Operand(Depth+1,L); if Failed then return; end if;
             loop
-               Spaces; if P>Text'Last then Failed:=True; return 0; end if;
+               Spaces; if P>Text'Last then Failed:=True; return; end if;
                if Text(P)=')' then
-                  if First_Op=Capability then Failed:=True; return 0; end if;
-                  P:=P+1; return L;
+                  if First_Op=Capability then Failed:=True; return; end if;
+                  P:=P+1; Result:=L; return;
                end if;
-               declare W : constant String:=Word_At; begin
+               Read_Word(Word);
+               declare W : constant String:=MC_Text.Image(Word); begin
                   if W="and" then Op:=And_Op; elsif W="or" then Op:=Or_Op;
                   elsif W="with" then Op:=With_Op; elsif W="without" then Op:=Without_Op;
                   elsif W="if" then Op:=If_Op; elsif W="unless" then Op:=Unless_Op;
-                  else Failed:=True; return 0; end if;
+                  else Failed:=True; return; end if;
                end;
-               if First_Op/=Capability and then Op/=First_Op then Failed:=True; return 0; end if;
-               First_Op:=Op; R:=Operand(Depth+1); if Failed then return 0; end if;
+               if First_Op/=Capability and then Op/=First_Op then Failed:=True; return; end if;
+               First_Op:=Op; Operand(Depth+1,R); if Failed then return; end if;
                A:=0; Spaces;
                if Op in If_Op | Unless_Op then
                   if P<=Text'Last and then Text(P)/=')' then
-                     declare W : constant String:=Word_At; begin
-                        if W/="else" then Failed:=True; return 0; end if;
+                     Read_Word(Word);
+               declare W : constant String:=MC_Text.Image(Word); begin
+                        if W/="else" then Failed:=True; return; end if;
                      end;
-                     A:=Operand(Depth+1); Spaces;
+                     Operand(Depth+1,A); Spaces;
                   end if;
-                  if P>Text'Last or else Text(P)/=')' then Failed:=True; return 0; end if;
+                  if P>Text'Last or else Text(P)/=')' then Failed:=True; return; end if;
                end if;
-               N:=(Op=>Op,Left=>L,Right=>R,Alternative=>A,others=><>); L:=Add(N);
-               if Op in If_Op | Unless_Op then P:=P+1; return L; end if;
+               N:=(Op=>Op,Left=>L,Right=>R,Alternative=>A,others=><>); Add(N,L);
+               if Op in If_Op | Unless_Op then P:=P+1; Result:=L; return; end if;
             end loop;
          else
             N.Op:=Capability;
-            declare W : constant String:=Word_At; begin
-               if W'Length=0 then Failed:=True; return 0; end if;
-               MC_Text.Set(N.Name,W,S); if S/=OK then Failed:=True; return 0; end if;
+            Read_Word(Word);
+               declare W : constant String:=MC_Text.Image(Word); begin
+               if W'Length=0 then Failed:=True; return; end if;
+               MC_Text.Set(N.Name,W,S); if S/=OK then Failed:=True; return; end if;
             end;
             Spaces;
             if P<=Text'Last and then Text(P) in '<' | '>' | '=' then
-               declare W : constant String:=Word_At; begin
+               Read_Word(Word);
+               declare W : constant String:=MC_Text.Image(Word); begin
                   if W="<" then N.Comparison:=LT; elsif W="<=" then N.Comparison:=LE;
                   elsif W="=" then N.Comparison:=EQ; elsif W=">=" then N.Comparison:=GE;
-                  elsif W=">" then N.Comparison:=GT; else Failed:=True; return 0; end if;
+                  elsif W=">" then N.Comparison:=GT; else Failed:=True; return; end if;
                end;
                Spaces;
-               declare W : constant String:=Word_At; V : Pkg_EVR.EVR; begin
+               Read_Word(Word);
+               declare W : constant String:=MC_Text.Image(Word); V : Pkg_EVR.EVR; begin
                   MC_Text.Set(N.Version,W,S); if S=OK then Pkg_EVR.Parse(W,V,S); end if;
-                  if S/=OK then Failed:=True; return 0; end if;
+                  if S/=OK then Failed:=True; return; end if;
+                  if MC_Text.Length(V.Version)=0 then Failed:=True; return; end if;
                end;
             end if;
-            return Add(N);
+            Add(N,Result); return;
          end if;
       end Operand;
    begin
       E:=(others=><>); Status:=Invalid_Input;
       if Text'Length=0 or else Text'Length>4096 or else Text'Last=Integer'Last then return; end if;
       for C of Text loop if Character'Pos(C)<32 or else Character'Pos(C)>126 then return; end if; end loop;
-      E.Root:=Operand(0); Spaces;
+      Operand(0,Parsed_Root); E.Root:=Parsed_Root; Spaces;
       if not Failed and then P=Text'Last+1 and then Well_Formed(E) then Status:=OK; end if;
    end Parse;
    function Well_Formed(E : Expression) return Boolean is

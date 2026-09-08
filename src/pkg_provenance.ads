@@ -3,7 +3,7 @@ with MC_Types; use MC_Types;
 package Pkg_Provenance with SPARK_Mode, Pure is
    type Level is (Unsigned, Signed_Source, Signed_Binary, Transparency_Bound, Reproducible_Witnessed);
    type Statement is record
-      Package, Source, Build_Recipe, Builder, Repository, Receipt : Digest := Zero_Digest;
+      Package_ID, Source, Build_Recipe, Builder, Repository, Receipt : Digest := Zero_Digest;
       Repository_Epoch, Build_Epoch : Counter := 0;
       Assurance : Level := Unsigned;
       Package_Signature, Metadata_Signature, Receipt_Verified : Boolean := False;

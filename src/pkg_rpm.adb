@@ -54,7 +54,7 @@ package body Pkg_RPM with SPARK_Mode is
            or else Raw_Items > Word (Max_Header_Bytes)
          then return; end if;
          Kind := Natural (Raw_Kind); Offset := Natural (Raw_Offset);
-         Items := Natural (Raw_Items); Span := 0; Width := 1;
+         Items := Natural (Raw_Items); Span := 0;
          for Previous in 1 .. J - 1 loop
             if Entries (Previous).Tag = Entries (J).Tag then return; end if;
          end loop;

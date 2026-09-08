@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT
 package body Pkg_Provenance with SPARK_Mode is
    function Valid (S : Statement) return Boolean is
-     (S.Package /= Zero_Digest and then S.Source /= Zero_Digest and then S.Build_Recipe /= Zero_Digest
+     (S.Package_ID /= Zero_Digest and then S.Source /= Zero_Digest and then S.Build_Recipe /= Zero_Digest
       and then S.Builder /= Zero_Digest and then S.Repository /= Zero_Digest
       and then S.Repository_Epoch > 0 and then S.Build_Epoch > 0
       and then (if S.Assurance >= Transparency_Bound then S.Receipt /= Zero_Digest and then S.Receipt_Verified)

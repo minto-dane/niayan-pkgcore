@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT
 with MC_Codec;
 package body Pkg_RPM_Fields with SPARK_Mode is
+   use type MC_Types.Byte;
    function Count(M : Pkg_RPM.Metadata; Tag : Word) return Natural is
       I : constant Natural:=Pkg_RPM.Find(M,Tag);
    begin return (if I=0 then 0 else M.Entries(I).Item_Count); end;
@@ -16,7 +17,7 @@ package body Pkg_RPM_Fields with SPARK_Mode is
          if B(J)=0 then
             if N=Item then
                if J-Start>MC_Text.Max_Length then Status:=Exhausted; return; end if;
-               declare S : String(1..J-Start); begin
+               declare Text_Length : constant Natural := J-Start; S : String(1..Text_Length); begin
                   for K in S'Range loop S(K):=Character'Val(B(Start+K-1)); end loop;
                   MC_Text.Set(Value,S,Status); return;
                end;

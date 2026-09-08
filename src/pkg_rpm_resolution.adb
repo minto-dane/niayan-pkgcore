@@ -44,6 +44,7 @@ package body Pkg_RPM_Resolution with SPARK_Mode is
          if F.Owner = 0 or else F.Owner > Item_Count or else MC_Text.Length (F.Name) = 0 then Status := Invalid_Input; return; end if;
          if F.Versioned then
             Pkg_EVR.Parse (MC_Text.Image (F.Version), AV, Status); if Status /= OK then return; end if;
+            if MC_Text.Length(AV.Version)=0 then Status:=Invalid_Input; return; end if;
          elsif MC_Text.Length (F.Version) /= 0 then Status := Invalid_Input; return; end if;
       end loop;
       Status := OK;
@@ -122,7 +123,7 @@ package body Pkg_RPM_Resolution with SPARK_Mode is
       T : Match_Table;
       V : array (Positive range 1 .. Pkg_Dependency.Max_Nodes) of Resolver_Model.Node_ID := (others => 0);
       Original_Count : constant Resolver_Model.Node_ID := U.Node_Count;
-      A, B, C, X, Y, Z : Resolver_Model.Node_ID := 0;
+      A, B, C, Y, Z : Resolver_Model.Node_ID; X : Resolver_Model.Node_ID := 0;
       procedure Join (Op : Resolver_Model.Operator; L, R : Resolver_Model.Node_ID; Result : out Resolver_Model.Node_ID) is
       begin
          Result := 0; if Status /= OK then return; end if;
@@ -194,7 +195,7 @@ package body Pkg_RPM_Resolution with SPARK_Mode is
       Origin : Digest; U : in out Resolver_Model.Universe;
       Status : out Outcome; Fuel : in out Natural) is
       Old_Count : constant Resolver_Model.Node_ID := U.Node_Count;
-      R, P, Not_P, Condition, Both : Resolver_Model.Node_ID := 0;
+      R, Condition : Resolver_Model.Node_ID; P, Not_P, Both : Resolver_Model.Node_ID := 0;
    begin
       Status := Invalid_Input;
       if Owner = 0 or else Owner > U.Item_Count or else Is_Zero (Origin) then return; end if;

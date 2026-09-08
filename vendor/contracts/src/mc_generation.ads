@@ -15,7 +15,7 @@ package MC_Generation with SPARK_Mode, Pure is
       Recovery_Pinned, Incidents_Clear, Acceptance_Approved : Boolean := False;
       Commit_Approved, Independent_Reviewer : Boolean := False;
    end record;
-   type Command is (Record_Staged, Begin_Canary, Observe_Healthy, Accept, Commit, Reject, Quarantine);
+   type Command is (Record_Staged, Begin_Canary, Observe_Healthy, Accept_Change, Commit, Reject, Quarantine);
    procedure Step(S:in out State; C:Command; E:Evidence; Status:out Outcome)
      with Global=>null,
        Post => (if Status/=OK then S=S'Old) and then (if Status=OK then S.Revision>S'Old.Revision);

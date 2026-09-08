@@ -10,7 +10,7 @@ package MC_JSON with SPARK_Mode, Pure is
    procedure Parse(Data : Bytes; D : out Document; Status : out Outcome) with Global=>null;
    function Member(Data : Bytes; D : Document; Object_Index : Index; Key : String) return Index with Global=>null;
    function Element(D : Document; Array_Index : Index; Position : Positive) return Index with Global=>null;
-   procedure String_Bytes(Data : Bytes; D : Document; N : Index; Value : out Bytes; Used : out Natural; Status : out Outcome) with Global=>null;
+   procedure String_Bytes(Data : Bytes; D : Document; N : Index; Value : out Bytes; Used : out Natural; Status : out Outcome) with Global=>null, Always_Terminates;
    procedure Natural_Number(Data : Bytes; D : Document; N : Index; Value : out Counter; Status : out Outcome) with Global=>null;
    -- Strict bounded JSON output profile: no duplicate object keys, no Unicode
    -- escapes/non-ASCII, no floating point/exponents; depth<=24. Not a generic

@@ -2,9 +2,10 @@
 package body MC_Base64 with SPARK_Mode is
    Alphabet : constant String:="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
    function Encode(Data : Bytes) return String is
-      R : String(1..4*((Data'Length+2)/3)); I : Natural:=0; P : Positive:=1; A,B,C : Natural;
+      R : String(1..4*((Data'Length+2)/3)) := (others=>'='); I : Natural:=0; P : Positive:=1; A,B,C : Natural;
    begin
       while I<Data'Length loop
+         pragma Loop_Variant(Increases=>I);
          A:=Natural(Data(Data'First+I)); B:=0; C:=0;
          if I+1<Data'Length then B:=Natural(Data(Data'First+I+1)); end if;
          if I+2<Data'Length then C:=Natural(Data(Data'First+I+2)); end if;
@@ -15,7 +16,7 @@ package body MC_Base64 with SPARK_Mode is
       end loop; return R;
    end;
    procedure Decode(Text : String; Data : out Bytes; Used : out Natural; Status : out Outcome) is
-      Pos : Natural:=0; V : array(0..3) of Natural; Pads : Natural;
+      Pos : Natural:=0; V : array(0..3) of Natural := (others=>0); Pads : Natural;
       function Value(C : Character) return Natural is
       begin for I in Alphabet'Range loop if Alphabet(I)=C then return I-1; end if; end loop; return 64; end;
       procedure Emit(N : Natural) is begin Used:=Used+1; Data(Data'First+Used-1):=Byte(N); end;

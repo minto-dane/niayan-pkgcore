@@ -2,7 +2,7 @@
 with MC_SHA256;
 package body MC_Golden with SPARK_Mode is
    function Header return MC_Protocol.Header is
-      Empty_Body : Bytes(1..0);
+      Empty_Body : constant Bytes := (1..0=>0);
    begin
       return (Kind=>MC_Protocol.Inspect_Request,Request_ID=>(others=>1),
         Cluster_ID=>(others=>2),Node_ID=>(others=>3),Resource_ID=>(others=>4),

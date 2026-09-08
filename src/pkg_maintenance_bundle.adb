@@ -6,9 +6,9 @@ package body Pkg_Maintenance_Bundle with SPARK_Mode is
         or else B.Baseline=Zero_Digest or else B.Epoch=0 or else B.Security_Epoch=0
         or else B.Count=0 or else not B.Signed or else B.Withdrawn then return False; end if;
       for N in 1..B.Count loop
-         if B.Content(N).Package=Zero_Digest or else B.Content(N).Required_Build=Zero_Digest
+         if B.Content(N).Package_ID=Zero_Digest or else B.Content(N).Required_Build=Zero_Digest
            or else B.Content(N).Advisory=Zero_Digest then return False; end if;
-         for M in 1..N-1 loop if B.Content(M).Package=B.Content(N).Package then return False; end if; end loop;
+         for M in 1..N-1 loop if B.Content(M).Package_ID=B.Content(N).Package_ID then return False; end if; end loop;
       end loop;
       return True;
    end Valid;
@@ -20,7 +20,7 @@ package body Pkg_Maintenance_Bundle with SPARK_Mode is
          if B.Content(N).Required then
             Found:=False;
             for M in 1..Count loop
-               if I(M).Package=B.Content(N).Package and then I(M).Build=B.Content(N).Required_Build then Found:=True; end if;
+               if I(M).Package_ID=B.Content(N).Package_ID and then I(M).Build=B.Content(N).Required_Build then Found:=True; end if;
             end loop;
             if not Found then return False; end if;
          end if;

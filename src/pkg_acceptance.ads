@@ -2,7 +2,7 @@
 with MC_Types; use MC_Types;
 package Pkg_Acceptance with SPARK_Mode, Pure is
    type Phase is (Trial, Verified, Accepted, Committed, Rejected, Quarantined);
-   type Action is (Observe, Accept, Commit, Reject, Quarantine);
+   type Action is (Observe, Accept_Change, Commit, Reject, Quarantine);
    type State is record
       Transaction_ID : Identity := Zero_Identity;
       Plan, Installed_Image, Recovery_Image : Digest := Zero_Digest;

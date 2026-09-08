@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT
 with MC_FS; with MC_Atomic; with MC_Hex; with MC_Paths;
 package body MC_Tools with SPARK_Mode => Off is
+   use type MC_Types.Byte;
    use type MC_FS.Entry_Kind;
    procedure Set_Argument(C : in out MC_Command.Invocation; Text : String; Status : out Outcome) is
    begin

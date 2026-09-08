@@ -14,8 +14,8 @@ package body MC_Maintenance with SPARK_Mode is
    function Permits (W : Window; Now : Counter; Requested : Impact) return Boolean is
      (Valid (W) and then W.Not_Before <= Now and then Now < W.Expires_At
       and then Impact'Pos (Requested) <= Impact'Pos (W.Maximum_Impact));
-   function Blocks (H : Hold; Subject : Digest; Apply, Accept, Commit : Boolean) return Boolean is
+   function Blocks (H : Hold; Subject : Digest; Apply, Accept_Change, Commit : Boolean) return Boolean is
      (Valid (H) and then H.Subject = Subject
-      and then ((Apply and then H.Blocks_Apply) or else (Accept and then H.Blocks_Accept)
+      and then ((Apply and then H.Blocks_Apply) or else (Accept_Change and then H.Blocks_Accept)
         or else (Commit and then H.Blocks_Commit)));
 end MC_Maintenance;

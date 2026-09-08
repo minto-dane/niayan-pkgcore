@@ -95,6 +95,6 @@ package body Resolver_Model with SPARK_Mode is
      (ID = 0 or else Values (ID));
    function Claims_Compatible (A, B : Claim) return Boolean is
      (A.Resource /= B.Resource or else A.Owner = B.Owner
-      or else (A.Shared_Identical and B.Shared_Identical
+      or else (A.Shared_Identical and then B.Shared_Identical
         and then A.Content = B.Content and then A.Attributes = B.Attributes));
 end Resolver_Model;

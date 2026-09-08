@@ -44,7 +44,7 @@ package body Pkg_Inventory with SPARK_Mode is
          Prefix(6):=Boolean'Pos(M.Items(I).Allow_Automatic_Repair);
          Prefix(7):=Boolean'Pos(M.Items(I).Boot_Or_Security_Critical);
          Prefix(9..136):=Pkg_File_Plan.Encode(M.Items(I).Desired); MC_SHA256.Update(C,Prefix);
-         declare Text : constant String:=MC_Text.Image(M.Items(I).Path); Data : Bytes(1..Text'Length); begin
+         declare Text : constant String:=MC_Text.Image(M.Items(I).Path); Data : Bytes(1..Text'Length) := (others => 0); begin
             for J in Text'Range loop Data(J):=Byte(Character'Pos(Text(J))); end loop;
             MC_SHA256.Update(C,Data);
          end;
@@ -77,7 +77,7 @@ package body Pkg_Inventory with SPARK_Mode is
       B(Pos..Pos+31):=MC_SHA256.Hash(B(B'First..Pos-1)); Used:=Need; Status:=OK;
    end Encode;
    procedure Decode(B : Bytes; M : out Manifest; Status : out Outcome) is
-      Pos : Natural; N,L : Counter; S : Outcome; Text : String(1..MC_Text.Max_Length);
+      Pos : Natural; N,L : Counter; S : Outcome; Text : String(1..MC_Text.Max_Length) := (others => ' ');
       function Zeros(A,Z : Natural) return Boolean is
       begin for I in A..Z loop if B(I)/=0 then return False; end if; end loop; return True; end;
    begin
@@ -86,7 +86,11 @@ package body Pkg_Inventory with SPARK_Mode is
       for I in Magic'Range loop if B(B'First+I-1)/=Byte(Character'Pos(Magic(I))) then return; end if; end loop;
       if B(B'Last-31..B'Last)/=MC_SHA256.Hash(B(B'First..B'Last-32)) then Status:=Corrupt; return; end if;
       if not Zeros(B'First+100,B'First+127) then return; end if;
-      M.Root_ID:=B(B'First+8..B'First+23); MC_Codec.U64(B,B'First+24,Wide(M.Generation),S); if S/=OK then return; end if;
+      M.Root_ID:=B(B'First+8..B'First+23);
+      declare Generation : constant Wide := MC_Codec.U64(B,B'First+24); begin
+         if Generation > Wide(Counter'Last) then return; end if;
+         M.Generation:=Counter(Generation);
+      end;
       M.Package_Set:=B(B'First+32..B'First+63); M.Contract:=B(B'First+64..B'First+95);
       N:=Counter(MC_Codec.U32(B,B'First+96)); if N=0 or else N>Max_Entries then return; end if;
       M.Count:=Natural(N); Pos:=B'First+128;

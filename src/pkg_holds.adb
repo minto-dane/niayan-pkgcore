@@ -17,7 +17,7 @@ package body Pkg_Holds with SPARK_Mode is
       for I in 1 .. C.Count loop
          if (C.Items (I).Expires_At = 0 or else Now < C.Items (I).Expires_At)
            and then MC_Maintenance.Blocks
-             (C.Items (I), Subject, Op = Apply, Op = Accept, Op = Commit)
+             (C.Items (I), Subject, Op = Apply, Op = Accept_Change, Op = Commit)
          then return True; end if;
       end loop;
       return False;

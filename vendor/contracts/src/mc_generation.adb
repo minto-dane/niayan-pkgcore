@@ -23,7 +23,7 @@ package body MC_Generation with SPARK_Mode is
               and then N.Healthy_Samples<255
             then N.Healthy_Samples:=N.Healthy_Samples+1; if N.Healthy_Samples>=3 and then E.Now-S.Entered_At>=E.Minimum_Soak_Ms then N.Current:=Verified; N.Entered_At:=E.Now; end if; Done; end if;
          when Verified =>
-            if C=Accept and then E.Acceptance_Approved and then E.Independent_Reviewer and then E.Recovery_Pinned
+            if C=Accept_Change and then E.Acceptance_Approved and then E.Independent_Reviewer and then E.Recovery_Pinned
             then N.Current:=Accepted; N.Entered_At:=E.Now; Done; end if;
          when Accepted =>
             if C=Commit and then E.Commit_Approved and then E.Independent_Reviewer and then E.Incidents_Clear

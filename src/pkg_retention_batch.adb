@@ -6,7 +6,8 @@ package body Pkg_Retention_Batch with SPARK_Mode is
       Members : MC_Backups.Selection; S : Outcome;
       D : Digest; Remaining : Natural := 0; Blocked, New_Position : Boolean;
       Accepted : MC_Backups.Selection := (others => False);
-      First_Time : Counter := Counter'Last; Last_Time, Representative_Time : Counter := 0;
+      First_Time : Counter := Counter'Last; Last_Time : Counter := 0;
+      Representative_Time : Counter;
    begin
       Delete_Set := (others => False); Status := Denied;
       if not MC_Backups.Valid (P.Recovery) or else not MC_Backups.Valid_Catalog (C,Count)
@@ -47,7 +48,7 @@ package body Pkg_Retention_Batch with SPARK_Mode is
                if Members (J) and then Requested (J) then return; end if;
             end loop;
             MC_Backups.Restore_Set (P.Recovery,C,Count,I,Members,S);
-            if S = OK then
+            if S = OK and then C (I).Restore_Test_Chain = D then
                Blocked := False;
                for J in 1..Count loop
                   Blocked := Blocked or else (Members (J) and then Requested (J));

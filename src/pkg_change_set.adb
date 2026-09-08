@@ -5,13 +5,13 @@ package body Pkg_Change_Set with SPARK_Mode is
       if S.ID = Zero_Digest or else S.Repository = Zero_Digest or else S.Incorporation = Zero_Digest
         or else S.Policy = Zero_Digest or else S.Base_Generation = 0 or else S.Count = 0 then return False; end if;
       for I in 1 .. S.Count loop
-         if S.Changes (I).Package = Zero_Digest or else S.Changes (I).Contract = Zero_Digest then return False; end if;
+         if S.Changes (I).Package_ID = Zero_Digest or else S.Changes (I).Contract = Zero_Digest then return False; end if;
          if S.Changes (I).Kind = Remove then
-            if S.Changes (I).Protected or else S.Changes (I).From_Build = Zero_Digest or else S.Changes (I).To_Build /= Zero_Digest then return False; end if;
+            if S.Changes (I).Is_Protected or else S.Changes (I).From_Build = Zero_Digest or else S.Changes (I).To_Build /= Zero_Digest then return False; end if;
          elsif S.Changes (I).Kind = Install then
             if S.Changes (I).From_Build /= Zero_Digest or else S.Changes (I).To_Build = Zero_Digest then return False; end if;
          elsif S.Changes (I).From_Build = Zero_Digest or else S.Changes (I).To_Build = Zero_Digest then return False; end if;
-         for J in 1 .. I - 1 loop if S.Changes (I).Package = S.Changes (J).Package then return False; end if; end loop;
+         for J in 1 .. I - 1 loop if S.Changes (I).Package_ID = S.Changes (J).Package_ID then return False; end if; end loop;
       end loop;
       return True;
    end Valid;

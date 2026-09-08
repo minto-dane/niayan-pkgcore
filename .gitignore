@@ -4,3 +4,17 @@ build/
 *.spark
 *.bexch
 evidence/latest-run-path.txt
+
+# Local build products and credentials
+.work/
+.cache/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.o
+*.ali
+*.pyc
+__pycache__/
+build/

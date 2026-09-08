@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT
+with Interfaces.C;
 with MC_FS; with MC_Command; with MC_Text;
 with Pkg_RPM; with Pkg_RPM_File;
 package body Pkg_RPM_Auth with SPARK_Mode => Off is
@@ -19,7 +20,7 @@ package body Pkg_RPM_Auth with SPARK_Mode => Off is
          Add("--dbpath"); Add(Private_Keyring); Add("--define"); Add("_pkgverify_level all");
          Add("--checksig"); Add("--"); Add("/proc/self/fd/4");
          C.Executable:=T.Path; C.Executable_Digest:=T.Content; C.Deadline:=Deadline;
-         C.Pass_Descriptor:=MC_FS.Native(F); C.May_Have_External_Effects:=False;
+         C.Pass_Descriptor:=Interfaces.C.int(MC_FS.Native(F)); C.May_Have_External_Effects:=False;
          if Status=OK then MC_Command.Run(C,Bytes'(1..0=>0),R,Status); end if;
          if Status/=OK then Status:=Denied;
          else

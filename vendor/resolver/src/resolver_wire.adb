@@ -8,7 +8,7 @@ package body Resolver_Wire with SPARK_Mode is
       (Header_Size + U.Item_Count * 124 + U.Node_Count * 16
          + U.Rule_Count * 40 + U.Claim_Count * 104);
    procedure Encode (U : Universe; B : out Bytes; Used : out Natural; Status : out Outcome) is
-      P : Positive := 1;
+      P : Positive;
       procedure N (X : Natural) is begin MC_Codec.Put32 (B, P, Word (X)); P := P + 4; end;
       procedure C (X : Counter) is begin MC_Codec.Put64 (B, P, Wide (X)); P := P + 8; end;
       procedure D (X : Digest) is begin B (P .. P + 31) := X; P := P + 32; end;
@@ -43,63 +43,67 @@ package body Resolver_Wire with SPARK_Mode is
    end Encode;
    procedure Decode (B : Bytes; U : out Universe; Status : out Outcome) is
       P : Positive := 9; Bad : Boolean := False;
-      function N (Limit : Natural) return Natural is
+      procedure N (Limit : Natural; Value : out Natural) is
          X : Word;
       begin
-         if P > B'Last or else B'Last - P < 3 then Bad := True; return 0; end if;
+         Value:=0;
+         if P > B'Last or else B'Last - P < 3 then Bad := True; return; end if;
          X := MC_Codec.U32 (B, P); P := P + 4;
-         if X > Word (Limit) then Bad := True; return 0; end if; return Natural (X);
+         if X > Word (Limit) then Bad := True; return; end if; Value:=Natural(X);
       end;
-      function C return Counter is
+      procedure C (Value : out Counter) is
          X : Wide;
       begin
-         if P > B'Last or else B'Last - P < 7 then Bad := True; return 0; end if;
+         Value:=0;
+         if P > B'Last or else B'Last - P < 7 then Bad := True; return; end if;
          X := MC_Codec.U64 (B, P); P := P + 8;
-         if X > Wide (Counter'Last) then Bad := True; return 0; end if; return Counter (X);
+         if X > Wide (Counter'Last) then Bad := True; return; end if; Value:=Counter(X);
       end;
-      function D return Digest is
-         X : Digest := Zero_Digest;
+      procedure D (Value : out Digest) is
       begin
-         if P > B'Last or else B'Last - P < 31 then Bad := True; return X; end if;
-         X := B (P .. P + 31); P := P + 32; return X;
+         Value:=Zero_Digest;
+         if P > B'Last or else B'Last - P < 31 then Bad := True; return; end if;
+         Value := B (P .. P + 31); P := P + 32;
       end;
-      function Byte_Value (Limit : Byte) return Natural is
+      procedure Byte_Value (Limit : Byte; Value : out Natural) is
          X : Byte;
       begin
-         if P > B'Last then Bad := True; return 0; end if;
+         Value:=0;
+         if P > B'Last then Bad := True; return; end if;
          X := B (P); P := P + 1;
-         if X > Limit then Bad := True; return 0; end if; return Natural (X);
+         if X > Limit then Bad := True; return; end if; Value:=Natural(X);
       end;
+      Small : Natural;
    begin
       U := (others => <>); Status := Invalid_Input;
       if B'First /= 1 or else B'Length < Header_Size or else B'Length > Maximum_Universe_Bytes
          or else B (1 .. 8) /= Magic then return; end if;
-      U.Subject.Root := D; U.Subject.Boot := D; U.Subject.Snapshot := D; U.Subject.Policy := D;
-      U.Subject.Adapter_Set := D; U.Subject.Native_Inventory := D;
-      U.Subject.Configuration := D; U.Subject.Effect_Contracts := D;
-      U.Subject.Generation := C; U.Item_Count := N (Max_Items); U.Node_Count := N (Max_Nodes);
-      U.Rule_Count := N (Max_Rules); U.Claim_Count := N (Max_Claims);
-      U.Maximum_Changes := N (Max_Steps); U.Maximum_Transfer := C;
+      D (U.Subject.Root); D (U.Subject.Boot); D (U.Subject.Snapshot); D (U.Subject.Policy);
+      D (U.Subject.Adapter_Set); D (U.Subject.Native_Inventory);
+      D (U.Subject.Configuration); D (U.Subject.Effect_Contracts);
+      C (U.Subject.Generation); N (Max_Items,U.Item_Count); N (Max_Nodes,U.Node_Count);
+      N (Max_Rules,U.Rule_Count); N (Max_Claims,U.Claim_Count);
+      N (Max_Steps,U.Maximum_Changes); C (U.Maximum_Transfer);
       if Bad or else B'Length /= Size (U) then return; end if;
       for I in 1 .. U.Item_Count loop
-         U.Items (I).Object_Hash := D; U.Items (I).Metadata_Hash := D; U.Items (I).Adapter_Hash := D;
-         U.Items (I).Initially_Present := Boolean'Val (Byte_Value (1));
-         U.Items (I).Permitted := Boolean'Val (Byte_Value (1));
-         U.Items (I).Reinstall_Requested := Boolean'Val (Byte_Value (1));
-         U.Items (I).Pin := Pin_Mode'Val (Byte_Value (3)); U.Items (I).Transfer_Bytes := C;
-         U.Items (I).Add_Pre := N (Max_Nodes); U.Items (I).Add_Post := N (Max_Nodes);
-         U.Items (I).Remove_Pre := N (Max_Nodes); U.Items (I).Remove_Post := N (Max_Nodes);
+         D (U.Items (I).Object_Hash); D (U.Items (I).Metadata_Hash); D (U.Items (I).Adapter_Hash);
+         Byte_Value (1,Small); U.Items (I).Initially_Present := Boolean'Val(Small);
+         Byte_Value (1,Small); U.Items (I).Permitted := Boolean'Val(Small);
+         Byte_Value (1,Small); U.Items (I).Reinstall_Requested := Boolean'Val(Small);
+         Byte_Value (3,Small); U.Items (I).Pin := Pin_Mode'Val(Small); C (U.Items (I).Transfer_Bytes);
+         N (Max_Nodes,U.Items (I).Add_Pre); N (Max_Nodes,U.Items (I).Add_Post);
+         N (Max_Nodes,U.Items (I).Remove_Pre); N (Max_Nodes,U.Items (I).Remove_Post);
       end loop;
       for I in 1 .. U.Node_Count loop
-         U.Nodes (I).Op := Operator'Val (N (5)); U.Nodes (I).Subject := N (Max_Items);
-         U.Nodes (I).Left := N (Max_Nodes); U.Nodes (I).Right := N (Max_Nodes);
+         N (5,Small); U.Nodes (I).Op := Operator'Val(Small); N (Max_Items,U.Nodes (I).Subject);
+         N (Max_Nodes,U.Nodes (I).Left); N (Max_Nodes,U.Nodes (I).Right);
       end loop;
       for I in 1 .. U.Rule_Count loop
-         U.Rules (I).Predicate := N (Max_Nodes); U.Rules (I).Scope := Rule_Scope'Val (N (1)); U.Rules (I).Origin := D;
+         N (Max_Nodes,U.Rules (I).Predicate); N (1,Small); U.Rules (I).Scope := Rule_Scope'Val(Small); D (U.Rules (I).Origin);
       end loop;
       for I in 1 .. U.Claim_Count loop
-         U.Claims (I).Resource := D; U.Claims (I).Content := D; U.Claims (I).Attributes := D;
-         U.Claims (I).Owner := N (Max_Items); U.Claims (I).Shared_Identical := Boolean'Val (N (1));
+         D (U.Claims (I).Resource); D (U.Claims (I).Content); D (U.Claims (I).Attributes);
+         N (Max_Items,U.Claims (I).Owner); N (1,Small); U.Claims (I).Shared_Identical := Boolean'Val(Small);
       end loop;
       if not Bad and then P = B'Last + 1 and then Well_Formed (U) then Status := OK; end if;
    end Decode;

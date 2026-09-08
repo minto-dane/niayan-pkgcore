@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT
 package body Pkg_Advisory with SPARK_Mode is
    function Valid (A : Advisory) return Boolean is
-     (A.ID /= Zero_Digest and then A.Package /= Zero_Digest and then A.Fixed_Build /= Zero_Digest
+     (A.ID /= Zero_Digest and then A.Package_ID /= Zero_Digest and then A.Fixed_Build /= Zero_Digest
       and then A.Metadata /= Zero_Digest and then A.Published_At > 0 and then A.Security_Epoch > 0
       and then (not A.Data_Migration or else A.Activate = Offline_Migration));
    function Decide (A : Advisory; Installed : Digest; Policy_Epoch : Counter) return Decision is

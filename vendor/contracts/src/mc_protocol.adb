@@ -24,7 +24,7 @@ package body MC_Protocol with SPARK_Mode is
       return B;
    end Encode;
    procedure Decode (Data : Bytes; Value : out Header; Status : out Outcome) is
-      B : Frame_Header := (others => 0);
+      B : Frame_Header;
    begin
       Value := (others => <>);
       Status := Invalid_Input;

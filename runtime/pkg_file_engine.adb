@@ -224,15 +224,27 @@ package body Pkg_File_Engine with SPARK_Mode => Off is
    procedure Validate_Log(C : Context; Status : out Outcome) is
       V : Log_View;
    begin Read_Log(C,V,Status); end Validate_Log;
+   procedure Load_Plan(C : in out Context; Expected : Digest; Status : out Outcome) is
+      type Buffer_Access is access Bytes;
+      procedure Free_Buffer is new Ada.Unchecked_Deallocation(Bytes,Buffer_Access);
+      B : Buffer_Access := null; Used : Natural;
+   begin
+      B:=new Bytes(1..Max_Plan_Bytes);
+      MC_Store.Read_Object(C.Store,Expected,B.all,Used,Status);
+      if Status=OK then
+         C.Plan:=new Plan; Decode(B(1..Used),C.Plan.all,Status);
+         if Status/=OK then Free(C.Plan); end if;
+      end if;
+      Free_Buffer(B);
+   exception when others => Free_Buffer(B); raise;
+   end Load_Plan;
    procedure Resume(C : in out Context; Status : out Outcome) is
-      B : Bytes(1..Max_Plan_Bytes); Used : Natural; Pin_Status : Outcome;
+      Pin_Status : Outcome;
    begin
       Status:=Invalid_Input;
       if not C.Opened or else C.Poisoned or else C.Plan/=null or else C.Root_State.Active_Transaction=Zero_Identity then return; end if;
       C.Plan_Digest:=C.Root_State.Active_Plan;
-      MC_Store.Read_Object(C.Store,C.Plan_Digest,B,Used,Status); if Status/=OK then return; end if;
-      C.Plan:=new Plan; Decode(B(1..Used),C.Plan.all,Status);
-      if Status/=OK then Free(C.Plan); return; end if;
+      Load_Plan(C,C.Plan_Digest,Status); if Status/=OK then return; end if;
       if C.Plan.Root_ID/=C.Root_State.Root_ID or else C.Plan.Transaction_ID/=C.Root_State.Active_Transaction
         or else (C.Root_State.Generation/=C.Plan.Base_Generation and then
           (C.Root_State.Generation/=C.Plan.Target_Generation or else C.Root_State.Accepted_Plan/=C.Plan_Digest
@@ -246,7 +258,7 @@ package body Pkg_File_Engine with SPARK_Mode => Off is
    exception when others => C.Poisoned:=True; Status:=Indeterminate;
    end Resume;
    procedure Resume_Recorded(C : in out Context; Expected_Plan : Digest; Status : out Outcome) is
-      B : Bytes(1..Max_Plan_Bytes); Used : Natural; V : Log_View; Other : Outcome;
+      V : Log_View; Other : Outcome;
    begin
       if C.Root_State.Active_Transaction/=Zero_Identity then
          Resume(C,Status);
@@ -255,8 +267,7 @@ package body Pkg_File_Engine with SPARK_Mode => Off is
       end if;
       Status:=Invalid_Input;
       if not C.Opened or else C.Poisoned or else C.Plan/=null or else Expected_Plan=Zero_Digest then return; end if;
-      MC_Store.Read_Object(C.Store,Expected_Plan,B,Used,Status); if Status/=OK then return; end if;
-      C.Plan:=new Plan; Decode(B(1..Used),C.Plan.all,Status); if Status/=OK then Free(C.Plan); return; end if;
+      Load_Plan(C,Expected_Plan,Status); if Status/=OK then return; end if;
       C.Plan_Digest:=Expected_Plan;
       if C.Plan.Root_ID/=C.Root_State.Root_ID then Status:=Denied; return; end if;
       MC_Store.Check_Pin(C.Store,C.Plan.Transaction_ID,Expected_Plan,Status); if Status/=OK then return; end if;

@@ -2,7 +2,9 @@
 with MC_Types; use MC_Types;
 with MC_Codec;
 with Pkg_Transactions; with Pkg_Journal; with Pkg_Recovery;
-with Pkg_Versions; with Pkg_Inventory; with Pkg_Admission;
+with Pkg_Versions; with Pkg_Admission;
+with Resolver_Model; with Resolver_Builder; with Resolver_Verify;
+with Resolver_Wire; with MC_SHA256;
 with Test_Support; use Test_Support;
 procedure Run_Pkg_Tests with SPARK_Mode => Off is
    use Pkg_Transactions;
@@ -10,7 +12,7 @@ procedure Run_Pkg_Tests with SPARK_Mode => Off is
    use type Pkg_Journal.Log_Record;
    use type Pkg_Journal.Head;
    use type Pkg_Recovery.Recovery_Action;
-   use type Pkg_Inventory.Plan_Status;
+   use type Resolver_Model.Check_Code;
    use type Pkg_Versions.Ordering;
    T, Before : Transaction;
    E, Missing : Evidence;
@@ -23,8 +25,14 @@ procedure Run_Pkg_Tests with SPARK_Mode => Off is
    Head, Saved_Head : Pkg_Journal.Head;
    Raw, Bad : Pkg_Journal.Encoded_Record;
    RE : Pkg_Recovery.Recovery_Evidence;
-   Universe : Pkg_Inventory.Model;
-   Old_Set, New_Set : Pkg_Inventory.Selection := (others=>False);
+   type Universe_Access is access Resolver_Model.Universe;
+   Universe : constant Universe_Access := new Resolver_Model.Universe;
+   Proposal : Resolver_Model.Proposal;
+   Resolution : Resolver_Model.Report;
+   Node, Left_Node, Right_Node : Resolver_Model.Node_ID;
+   Fuel, Encoded_Size : Natural;
+   Universe_Data : Bytes (1 .. 4096);
+   Universe_Hash : Digest;
    F : Pkg_Admission.Facts;
    procedure Compare (L,R : String; Want : Pkg_Versions.Ordering) is
    begin Expect(Pkg_Versions.Compare(L,R)=Want,"version-" & L & "/" & R); end Compare;
@@ -102,20 +110,43 @@ begin
    Compare("1a","1.1",Pkg_Versions.Older);
    Compare("","",Pkg_Versions.Equal);
    Compare("1+0","1.0",Pkg_Versions.Equal);
-   Universe.Base_Generation := 7; Universe.Universe_Digest := (others=>7);
-   Universe.Packages(1) := (Available=>True,Admitted=>True,Protected_Package=>True,
-                          Allow_Replacement=>False,Artifact=>(others=>1));
-   Universe.Packages(2) := (Available=>True,Admitted=>True,Artifact=>(others=>2),others=>False);
-   Old_Set(1) := True; New_Set := Old_Set; New_Set(2) := True;
-   Universe.Requires_All(2,1) := True;
-   Expect(Pkg_Inventory.Check(Universe,Old_Set,New_Set,7,(others=>7))=Pkg_Inventory.Plan_OK,
-          "inventory-closure");
-   New_Set(1) := False;
-   Expect(Pkg_Inventory.Check(Universe,Old_Set,New_Set,7,(others=>7))=Pkg_Inventory.Protected_Removal,
-          "protected-removal");
-   New_Set := Old_Set;
-   Expect(Pkg_Inventory.Check(Universe,Old_Set,New_Set,6,(others=>7))=Pkg_Inventory.Stale_Base,
-          "inventory-generation-cas");
+   -- Dependency selection moved from the old inventory API to resolvercore.
+   -- Keep closure, protected-removal and stale-generation coverage here.
+   Universe.Subject := (Root => (others => 1), Boot => (others => 2),
+      Snapshot => (others => 3), Policy => (others => 4), Adapter_Set => (others => 5),
+      Native_Inventory => (others => 6), Configuration => (others => 7),
+      Effect_Contracts => (others => 8), Generation => 7);
+   Universe.Item_Count := 2; Universe.Maximum_Changes := 2;
+   for I in 1 .. 2 loop
+      Universe.Items(I) := (Object_Hash => (others => Byte(I)),
+         Metadata_Hash => (others => 10), Adapter_Hash => (others => 11),
+         Permitted => True, others => <>);
+      Resolver_Builder.Presence(Universe.all,I,Node,S); Expect(S=OK,"presence");
+   end loop;
+   Universe.Items(1).Initially_Present := True;
+   Universe.Items(1).Pin := Resolver_Model.Keep_State;
+   Resolver_Builder.Negate(Universe.all,2,Left_Node,S); Expect(S=OK,"negate");
+   Resolver_Builder.Combine(Universe.all,Resolver_Model.Or_Op,Left_Node,1,Right_Node,S);
+   Expect(S=OK,"dependency implication");
+   Resolver_Builder.Require(Universe.all,Right_Node,Resolver_Model.Every_Boundary,(others=>12),S);
+   Expect(S=OK,"dependency rule");
+   Resolver_Wire.Encode(Universe.all,Universe_Data,Encoded_Size,S); Expect(S=OK,"universe encoding");
+   Universe_Hash:=MC_SHA256.Hash(Universe_Data(1..Encoded_Size));
+   Proposal.Universe_Hash:=Universe_Hash; Proposal.Selected(1..2):=(others=>True);
+   Proposal.Count:=1; Proposal.Steps(1):=(Resolver_Model.Add_Item,2);
+   Fuel:=Resolver_Verify.Default_Fuel;
+   Resolver_Verify.Check_Schedule(Universe.all,Universe_Hash,Proposal,Resolution,Fuel);
+   Expect(Resolution.Code=Resolver_Model.Valid_Schedule and then not Resolution.Execution_Permit,"inventory-closure");
+   Proposal.Steps(1):=(Resolver_Model.Remove_Item,1);
+   Fuel:=Resolver_Verify.Default_Fuel;
+   Resolver_Verify.Check_Schedule(Universe.all,Universe_Hash,Proposal,Resolution,Fuel);
+   Expect(Resolution.Code=Resolver_Model.Policy_Violation,"protected-removal");
+   Universe.Subject.Generation:=8;
+   Resolver_Wire.Encode(Universe.all,Universe_Data,Encoded_Size,S); Expect(S=OK,"new generation encoding");
+   Universe_Hash:=MC_SHA256.Hash(Universe_Data(1..Encoded_Size));
+   Fuel:=Resolver_Verify.Default_Fuel;
+   Resolver_Verify.Check_Schedule(Universe.all,Universe_Hash,Proposal,Resolution,Fuel);
+   Expect(Resolution.Code=Resolver_Model.Stale_Universe,"inventory-generation-cas");
    Expect(not Pkg_Admission.Admissible(F),"empty-admission-denied");
    Report;
 end Run_Pkg_Tests;

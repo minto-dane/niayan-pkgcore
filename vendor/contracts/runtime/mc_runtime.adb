@@ -10,7 +10,7 @@ package body MC_Runtime with SPARK_Mode => Off is
      with Import,Convention=>C,External_Name=>"prctl";
    procedure Initialize(Status : out Outcome) is
       Old : unsigned; H : System.Address;
-      pragma Unreferenced(Old,H);
+      pragma Unreferenced(Old);
    begin
       Status:=IO_Error; Old:=Umask(8#077#);
       if Sodium_Init<0 then return; end if;

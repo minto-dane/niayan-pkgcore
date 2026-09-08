@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT
+with Ada.Unchecked_Deallocation;
 with MC_FS; with MC_Atomic; with MC_Hex; with MC_SHA256; with MC_Log_Format;
 with Pkg_Root_State; with Pkg_File_Plan;
 package body Pkg_Recovery_Audit with SPARK_Mode => Off is
@@ -11,8 +12,12 @@ package body Pkg_Recovery_Audit with SPARK_Mode => Off is
       Journal : MC_FS.File;
       RS : Pkg_Root_State.State;
       State_Bytes, State_After : Pkg_Root_State.Frame;
-      P : Pkg_File_Plan.Plan;
-      Payload : Bytes (1 .. Pkg_File_Plan.Max_Plan_Bytes);
+      type Plan_Access is access Pkg_File_Plan.Plan;
+      type Buffer_Access is access Bytes;
+      procedure Free is new Ada.Unchecked_Deallocation(Pkg_File_Plan.Plan,Plan_Access);
+      procedure Free is new Ada.Unchecked_Deallocation(Bytes,Buffer_Access);
+      P : Plan_Access := null;
+      Payload : Buffer_Access := null;
       Pin : Bytes (1 .. 33);
       Frame : MC_Log_Format.Frame;
       E : MC_Log_Format.Log_Entry;
@@ -22,7 +27,7 @@ package body Pkg_Recovery_Audit with SPARK_Mode => Off is
       Count, Whole : Counter := 0;
       Used : Natural;
       procedure Close_All is
-      begin MC_FS.Close (Journal); MC_FS.Close (Store_Dir); MC_FS.Close (State_Dir); end;
+      begin MC_FS.Close (Journal); MC_FS.Close (Store_Dir); MC_FS.Close (State_Dir); Free(P); Free(Payload); end;
       procedure Fail (Why : Finding; Code : Outcome) is
       begin R.Result := Why; Status := Code; Close_All; end;
       procedure Read_Present (Dir : MC_FS.Root; Name : String; B : out Bytes;
@@ -40,6 +45,8 @@ package body Pkg_Recovery_Audit with SPARK_Mode => Off is
    begin
       R := (others => <>); Status := Invalid_Input;
       if Expected_Plan = Zero_Digest then return; end if;
+      P:=new Pkg_File_Plan.Plan;
+      Payload:=new Bytes(1..Pkg_File_Plan.Max_Plan_Bytes);
       R.Plan_Digest := Expected_Plan;
       MC_FS.Open_Root (State_Path,State_Dir,Status,Private_Only => True);
       if Status /= OK then Fail (Read_Failure,Status); return; end if;
@@ -52,13 +59,13 @@ package body Pkg_Recovery_Audit with SPARK_Mode => Off is
       R.Root_ID := RS.Root_ID; R.Root_Generation := RS.Generation;
       declare H : constant String := MC_Hex.Encode (Expected_Plan); begin
          Read_Present (Store_Dir,"objects/" & H(1..2) & "/" & H(3..64),
-                       Payload,Used,Missing_Plan,Invalid_Plan);
+                       Payload.all,Used,Missing_Plan,Invalid_Plan);
       end;
       if Status /= OK then Close_All; return; end if;
       if MC_SHA256.Hash (Payload (1 .. Used)) /= Expected_Plan then
          Fail (Invalid_Plan,Corrupt); return;
       end if;
-      Pkg_File_Plan.Decode (Payload (1 .. Used),P,Status);
+      Pkg_File_Plan.Decode (Payload (1 .. Used),P.all,Status);
       if Status /= OK then Fail (Invalid_Plan,Status); return; end if;
       R.Transaction_ID := P.Transaction_ID;
       if RS.Root_ID /= P.Root_ID or else

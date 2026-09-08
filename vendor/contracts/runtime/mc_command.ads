@@ -3,6 +3,7 @@ with MC_Types; use MC_Types;
 with Interfaces.C;
 with MC_Text;
 package MC_Command with SPARK_Mode => Off is
+   use type Interfaces.C.int;
    Max_Arguments : constant := 48;
    Max_Output : constant := 262_144;
    type Argument_Array is array(Positive range 1..Max_Arguments) of MC_Text.Value;

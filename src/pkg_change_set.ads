@@ -6,10 +6,10 @@ package Pkg_Change_Set with SPARK_Mode, Pure is
    subtype Item_Index is Positive range 1 .. Max_Items;
    type Change_Kind is (Install, Upgrade, Downgrade, Remove, Reinstall);
    type Item is record
-      Package, From_Build, To_Build, Contract : Digest := Zero_Digest;
+      Package_ID, From_Build, To_Build, Contract : Digest := Zero_Digest;
       Kind : Change_Kind := Install;
       Activation : Pkg_Advisory.Activation := Pkg_Advisory.Immediate;
-      Protected : Boolean := False;
+      Is_Protected : Boolean := False;
    end record;
    type Items is array (Item_Index) of Item;
    type Set is record

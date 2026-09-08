@@ -53,7 +53,7 @@ package body Pkg_Payload_Map with SPARK_Mode is
             MC_Hex.Decode(MC_Text.Image(Hash_Text),Files.Files(I).Content,Status); if Status/=OK then return; end if;
          elsif Files.Files(I).Kind=Symbolic_Link then
             Text(B,M,1036,I,Files.Files(I).Link_Target,Status); if Status/=OK then return; end if;
-            declare L : constant String:=MC_Text.Image(Files.Files(I).Link_Target); Data : Bytes(1..L'Length); begin
+            declare L : constant String:=MC_Text.Image(Files.Files(I).Link_Target); Data : Bytes(1..L'Length) := (others => 0); begin
                if L'Length=0 then Status:=Corrupt; return; end if;
                for J in L'Range loop Data(J):=Byte(Character'Pos(L(J))); end loop;
                Files.Files(I).Content:=MC_SHA256.Hash(Data); Files.Files(I).Size:=Counter(L'Length);

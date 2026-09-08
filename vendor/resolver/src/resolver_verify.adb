@@ -64,7 +64,7 @@ package body Resolver_Verify with SPARK_Mode is
    end Check_Selection;
    procedure Check_Schedule (U : Universe; Expected_Hash : Digest;
       P : Proposal; R : out Report; Fuel : in out Natural) is
-      S, Seen : Selection := (others => False);
+      S : Selection; Seen : Selection := (others=>False);
       V : Truth_Array; Pre_ID, Post_ID : Node_ID; Total : Counter;
    begin
       R := (others => <>);

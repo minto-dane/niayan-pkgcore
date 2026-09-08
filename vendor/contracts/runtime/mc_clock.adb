@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT
 with MC_Posix; with Interfaces.C; with MC_Kernel_Read; with MC_Hex;
 package body MC_Clock with SPARK_Mode => Off is
+   use type MC_Types.Byte;
    use Interfaces.C;
    procedure Get (Clock : int; Millis : Boolean; Now : out Counter; Status : out Outcome) is
       T : aliased MC_Posix.Timespec;

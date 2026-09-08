@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT
 with MC_Codec; with MC_Paths;
 package body Pkg_File_Plan with SPARK_Mode is
+   use type MC_Types.Byte;
    use type Word; use type Wide;
    Magic : constant Bytes := (16#4D#,16#43#,16#50#,16#4C#,16#41#,16#4E#,16#30#,16#32#);
    function Valid(S : Shape) return Boolean is
@@ -127,12 +128,19 @@ package body Pkg_File_Plan with SPARK_Mode is
       end loop;
       Used:=Pos; Status:=OK;
    end Encode;
+   procedure Clear(P : out Plan) is
+   begin
+      P.Root_ID:=Zero_Identity; P.Transaction_ID:=Zero_Identity;
+      P.Base_Generation:=0; P.Target_Generation:=0; P.Epoch:=0; P.Fence:=0;
+      P.Package_Set:=Zero_Digest; P.Effect_Contract:=Zero_Digest; P.Count:=0;
+      for I in P.Changes'Range loop P.Changes(I):=(others=><>); end loop;
+   end Clear;
    procedure Decode(B : Bytes; P : out Plan; Status : out Outcome) is
-      Pos : Natural:=Header_Size; L : Natural; S : Encoded_Shape;
+      Pos : Natural:=Header_Size; L : Natural; S : Encoded_Shape; Field_Status : Outcome;
       type Offsets is array(1..4) of Positive;
       Checks : constant Offsets:=(41,49,57,65);
    begin
-      P:=(others=><>); Status:=Invalid_Input;
+      Clear(P); Status:=Invalid_Input;
       if B'First/=1 or else B'Length<Header_Size or else B'Length>Max_Plan_Bytes or else B(1..8)/=Magic then return; end if;
       for J in 141..Header_Size loop if B(J)/=0 then return; end if; end loop;
       for O of Checks loop if MC_Codec.U64(B,O)>Wide(Counter'Last) then return; end if; end loop;
@@ -148,14 +156,14 @@ package body Pkg_File_Plan with SPARK_Mode is
             or else B(Pos+4)/=0 then return; end if;
          P.Changes(I).Domain:=State_Domain'Val(B(Pos+3)); Pos:=Pos+4;
          if B'Length-Pos<L+2*Shape_Size then return; end if;
-         declare Name : String(1..L); begin
+         declare Text_Length : constant Natural := L; Name : String(1..Text_Length); begin
             for J in Name'Range loop Name(J):=Character'Val(B(Pos+J)); end loop;
-            MC_Text.Set(P.Changes(I).Path,Name,Status); if Status/=OK then return; end if;
+            MC_Text.Set(P.Changes(I).Path,Name,Field_Status); if Field_Status/=OK then return; end if;
          end;
-         Pos:=Pos+L; S:=B(Pos+1..Pos+Shape_Size); Decode_Shape(S,P.Changes(I).Before,Status);
-         if Status/=OK then return; end if; Pos:=Pos+Shape_Size;
-         S:=B(Pos+1..Pos+Shape_Size); Decode_Shape(S,P.Changes(I).After,Status);
-         if Status/=OK then return; end if; Pos:=Pos+Shape_Size;
+         Pos:=Pos+L; S:=B(Pos+1..Pos+Shape_Size); Decode_Shape(S,P.Changes(I).Before,Field_Status);
+         if Field_Status/=OK then return; end if; Pos:=Pos+Shape_Size;
+         S:=B(Pos+1..Pos+Shape_Size); Decode_Shape(S,P.Changes(I).After,Field_Status);
+         if Field_Status/=OK then return; end if; Pos:=Pos+Shape_Size;
       end loop;
       Status:=Invalid_Input;
       if Pos=B'Length and then Layout_Valid(P) then Status:=OK; end if;

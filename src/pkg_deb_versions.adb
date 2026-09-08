@@ -10,7 +10,9 @@ package body Pkg_Deb_Versions with SPARK_Mode is
    function Digit (C : Character) return Boolean is (C in '0' .. '9');
    function Alpha (C : Character) return Boolean is
      (C in 'a' .. 'z' or else C in 'A' .. 'Z');
-   procedure Split (Text : String; P : out Parts; OK : out Boolean) is
+   procedure Split (Text : String; P : out Parts; OK : out Boolean)
+     with Global => null, Depends => (P => Text, OK => Text)
+   is
       Colon, Dash : Integer := 0;
       Value : Natural := 0;
       D : Natural;
@@ -55,7 +57,11 @@ package body Pkg_Deb_Versions with SPARK_Mode is
    function Valid (Text : String) return Boolean is
       P : Parts; OK : Boolean;
    begin
-      Split (Text, P, OK); return OK;
+      Split (Text, P, OK);
+      return OK and then P.First_Up in Text'Range
+        and then P.Last_Up in P.First_Up .. Text'Last
+        and then (not P.Has_Revision or else
+          (P.First_Rev in P.Last_Up + 1 .. Text'Last and then P.Last_Rev = Text'Last));
    end Valid;
    function Weight (S : String; I : Integer) return Integer is
    begin
@@ -71,21 +77,24 @@ package body Pkg_Deb_Versions with SPARK_Mode is
       WA, WB : Integer;
    begin
       while I <= A'Last or else J <= B'Last loop
+         pragma Loop_Variant (Increases => I, Increases => J);
          while (I <= A'Last and then not Digit (A (I)))
            or else (J <= B'Last and then not Digit (B (J))) loop
+            pragma Loop_Variant (Increases => I, Increases => J);
             WA := Weight (A, I); WB := Weight (B, J);
             if WA < WB then return Older; elsif WA > WB then return Newer; end if;
             if I <= A'Last then I := I + 1; end if;
             if J <= B'Last then J := J + 1; end if;
          end loop;
-         while I <= A'Last and then A (I) = '0' loop I := I + 1; end loop;
-         while J <= B'Last and then B (J) = '0' loop J := J + 1; end loop;
+         while I <= A'Last and then A (I) = '0' loop pragma Loop_Variant (Increases => I); I := I + 1; end loop;
+         while J <= B'Last and then B (J) = '0' loop pragma Loop_Variant (Increases => J); J := J + 1; end loop;
          SA := I; SB := J;
-         while I <= A'Last and then Digit (A (I)) loop I := I + 1; end loop;
-         while J <= B'Last and then Digit (B (J)) loop J := J + 1; end loop;
+         while I <= A'Last and then Digit (A (I)) loop pragma Loop_Variant (Increases => I); I := I + 1; end loop;
+         while J <= B'Last and then Digit (B (J)) loop pragma Loop_Variant (Increases => J); J := J + 1; end loop;
          LA := I - SA; LB := J - SB;
          if LA < LB then return Older; elsif LA > LB then return Newer; end if;
          while SA < I loop
+            pragma Loop_Variant (Increases => SA);
             if A (SA) < B (SB) then return Older;
             elsif A (SA) > B (SB) then return Newer; end if;
             SA := SA + 1; SB := SB + 1;

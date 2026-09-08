@@ -21,5 +21,5 @@ package MC_Maintenance with SPARK_Mode, Pure is
    function Valid (H : Hold) return Boolean with Global => null;
    function Valid (W : Window) return Boolean with Global => null;
    function Permits (W : Window; Now : Counter; Requested : Impact) return Boolean with Global => null;
-   function Blocks (H : Hold; Subject : Digest; Apply, Accept, Commit : Boolean) return Boolean with Global => null;
+   function Blocks (H : Hold; Subject : Digest; Apply, Accept_Change, Commit : Boolean) return Boolean with Global => null;
 end MC_Maintenance;

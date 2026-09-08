@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT
 with Interfaces.C; with Interfaces.C.Strings; with Ada.Unchecked_Conversion; with Ada.Unchecked_Deallocation;
 package body MC_XML with SPARK_Mode => Off is
+   use type MC_Types.Byte;
    use Interfaces.C; use type System.Address; use type Interfaces.C.Strings.chars_ptr;
    function Create(B : System.Address; N : int; URL, Encoding : System.Address; Options : int) return System.Address
      with Import,Convention=>C,External_Name=>"xmlReaderForMemory";
@@ -62,7 +63,7 @@ package body MC_XML with SPARK_Mode => Off is
                declare P : constant System.Address:=N_Value(R.Handle); N : size_t; begin
                   if P=System.Null_Address then return; end if; N:=Len(P,4_097);
                   if N>4_096 then Status:=Exhausted; return; end if;
-                  for C of Interfaces.C.Strings.Value(As_Ptr(P),N) loop
+                  for C of String'(Interfaces.C.Strings.Value(As_Ptr(P),N)) loop
                      if C not in ' '|ASCII.HT|ASCII.LF|ASCII.CR then Status:=Invalid_Input; return; end if;
                   end loop; Name:=MC_Text.Empty; Status:=OK;
                end;

@@ -2,12 +2,13 @@
 package body MC_Hex with SPARK_Mode is
    Table : constant String := "0123456789abcdef";
    function Encode (Data : Bytes) return String is
-      Result : String (1 .. Data'Length * 2);
+      Result : String (1 .. Data'Length * 2) := (others => '0');
       K : Natural := 0;
    begin
-      for Item of Data loop
-         Result (K + 1) := Table (Natural (Item) / 16 + 1);
-         Result (K + 2) := Table (Natural (Item) mod 16 + 1);
+      for J in Data'Range loop
+         pragma Loop_Invariant (K = 2 * (J - Data'First));
+         Result (K + 1) := Table (Natural (Data (J)) / 16 + 1);
+         Result (K + 2) := Table (Natural (Data (J)) mod 16 + 1);
          K := K + 2;
       end loop;
       return Result;
@@ -27,6 +28,7 @@ package body MC_Hex with SPARK_Mode is
          return;
       end if;
       for J in Data'Range loop
+         pragma Loop_Invariant (K = 2 * (J - Data'First));
          A := Nibble (Text (Text'First + K));
          B := Nibble (Text (Text'First + K + 1));
          if A < 0 or else B < 0 then Data := (others => 0); return; end if;
