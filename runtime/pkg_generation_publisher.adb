@@ -2,14 +2,15 @@
 with Ada.Unchecked_Deallocation; with Interfaces.C;
 with MC_Atomic; with MC_Clock; with MC_Dirents; with MC_FS; with MC_Posix; with MC_SHA256; with MC_Store;
 with Pkg_Catalog_Store; with Pkg_Catalog_Retention; with Pkg_File_Engine; with Pkg_File_Plan; with Pkg_File_Replay;
-with Pkg_Generation_Manifest; with Pkg_Generation_Stage; with Pkg_Recovery_Audit; with Pkg_Root_State;
+with Pkg_Generation_Manifest; with Pkg_Generation_Stage; with Pkg_Generation_Intent;
+with Pkg_Recovery_Audit; with Pkg_Root_State;
 package body Pkg_Generation_Publisher with SPARK_Mode => Off is
    package GD renames Pkg_Generation_Descriptor;
    package GM renames Pkg_Generation_Manifest;
    package Staging is new Pkg_Generation_Stage (Authorize_Stage);
    use type Interfaces.C.unsigned; use type Interfaces.C.int; use type Wide; use type Word;
    use type Pkg_Root_State.State;
-   use type GD.Descriptor; use type Pkg_File_Replay.Direction;
+   use type GD.Descriptor; use type GM.Format_Kind; use type Pkg_File_Replay.Direction;
    type Plan_Access is access Pkg_File_Plan.Plan;
    type Buffer_Access is access Bytes;
    procedure Free is new Ada.Unchecked_Deallocation (Pkg_File_Plan.Plan, Plan_Access);
@@ -155,7 +156,6 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       Issue : out Pkg_Deb_Transition.Finding; Status : out Outcome) is
       C : Observation_Context; Latest : Pkg_Root_State.State;
       Before, After : Pkg_Selected_Catalog.Catalog; Payload : Pkg_Payload_Index.Index;
-      Wire : Bytes (1 .. 136) := (others => 0);
       use type Pkg_Deb_Transition.Failure_Kind;
       procedure Clear_Result is
       begin
@@ -188,10 +188,9 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       if Status = OK and then Latest /= C.Accepted then Status := Stale; end if;
       if Status = OK then Check_Time; end if;
       if Status = OK then
-         Wire (1 .. 8) := (78, 73, 65, 85, 80, 68, 48, 49);
-         Wire (9 .. 40) := Expected_Current; Wire (41 .. 72) := Target_Catalog;
-         Wire (73 .. 104) := Target_Closure; Wire (105 .. 136) := Pkg_Deb_Transition.Fingerprint (Result);
-         Binding := MC_SHA256.Hash (Wire); Current := C.Bound;
+         Binding := Pkg_Generation_Intent.Update_Binding
+           (Expected_Current, Target_Catalog, Target_Closure, Pkg_Deb_Transition.Fingerprint (Result));
+         Current := C.Bound;
       else Clear_Result; end if;
       Close_Observation (C);
    exception when others => Close_Observation (C); Issue := (others => <>); Clear_Result; Status := Indeterminate;
@@ -199,7 +198,8 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
    procedure Publish (Root_Path, State_Path, Store_Path, Generation_Bank : String;
       Expected_Plan, Health_Receipt : Digest; Deadline : Counter; Status : out Outcome) is
       Root, State : MC_FS.Root; Lock, Root_Lock : MC_FS.File; Store : MC_Store.Store;
-      RS : Pkg_Root_State.State; Before, After, Prior, Discarded : GD.Descriptor; M : GM.Manifest;
+      RS : Pkg_Root_State.State; Before, After, Prior, Discarded : GD.Descriptor; M, Baseline : GM.Manifest;
+      Before_Closure, Native_Binding : Digest := Zero_Digest;
       P, Old_Plan : Plan_Access := null; Encoded : Buffer_Access := null; Used : Natural;
       Hold : Staging.Verified_Generation; Audit : Pkg_Recovery_Audit.Report;
       procedure Time_Left (Result : out Outcome) is
@@ -213,7 +213,8 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
          Epoch, Fence : Counter; Phase : String; Result : out Outcome) is
       begin
          Result := Denied;
-         if P = null or else not Staging.Held (Hold) or else Staging.Manifest (Hold) /= After.Manifest
+         if P = null or else Native_Binding = Zero_Digest
+           or else not Staging.Held (Hold) or else Staging.Manifest (Hold) /= After.Manifest
            or else Root_ID /= P.Root_ID or else Transaction_ID /= P.Transaction_ID or else Plan /= Expected_Plan
            or else Epoch /= P.Epoch or else Fence /= P.Fence
            or else (Evidence /= Zero_Digest and then Evidence /= Health_Receipt)
@@ -246,6 +247,7 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
         or else P.Changes (1).After.GID /= Word (MC_Posix.Egid)) then Status := Denied; end if;
       if Status = OK then Read_Manifest (Store, After, M, Status); end if;
       if Status = OK then GM.Check_Retention (Store, M, Deadline, Status); end if;
+      if Status = OK and then M.Format /= GM.Intent_V3 then Status := Unsupported; end if;
       if Status = OK and then (M.Effect_Contract /= P.Effect_Contract or else M.Epoch /= P.Epoch or else M.Fence /= P.Fence
         or else M.Transaction_ID = P.Transaction_ID) then Status := Denied; end if;
       if Status = OK then Read_State (Root, State, P.Root_ID, RS, Status); end if;
@@ -270,6 +272,15 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       end if;
       if Status = OK and then RS.Active_Transaction /= Zero_Identity
         and then (RS.Active_Transaction /= P.Transaction_ID or else RS.Active_Plan /= Expected_Plan) then Status := Conflict; end if;
+      if Status = OK and then Before /= GD.Empty then
+         Read_Manifest (Store, Before, Baseline, Status);
+         if Status = OK then GM.Check_Retention (Store, Baseline, Deadline, Status); end if;
+         if Status = OK then Before_Closure := Baseline.Catalog_Closure; end if;
+      end if;
+      if Status = OK then
+         Pkg_Generation_Intent.Verify (Store, M.Intent, P.Root_ID, Before, Before_Closure,
+            M.Catalog, M.Catalog_Closure, Deadline, Native_Binding, Status);
+      end if;
       Encoded := new Bytes (1 .. Pkg_File_Plan.Max_Plan_Bytes);
       if Status = OK then Pkg_File_Plan.Encode (P.all, Encoded.all, Used, Status); end if;
       MC_Store.Close (Store); MC_FS.Close (Root_Lock);

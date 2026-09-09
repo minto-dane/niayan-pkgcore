@@ -39,9 +39,16 @@ package Pkg_Generation_Publisher with SPARK_Mode => Off is
    -- This is planning evidence, not supply authentication, a phase schedule or
    -- execution permission. Locks are released on return. Admission must validate
    -- policy, effects and this exact predecessor under its own live reservation.
-   -- Publish and Read_Current_Catalog require a v2 manifest with its exact CAS
-   -- retention closure. Structural v1 remains readable only as metadata. Publish
-   -- requires a finite deadline and checks it in the composed execution guard.
+   -- Publish requires a v3 manifest carrying a retained native intent. The intent
+   -- is bound through manifest/descriptor to the physical plan checked by the
+   -- existing managed authority. Native dependencies, protection and the exact
+   -- predecessor are revalidated from originals before any publication effect.
+   -- Initial construction requires the actual initial root state and a checked
+   -- native endpoint; an ordinary intent cannot bypass baseline protections.
+   -- Native reads accept retained v2/v3; v1 remains metadata-only. Publish rejects
+   -- v1/v2 plans, including their replay: legacy recovery needs its retained
+   -- implementation before migration. There is no policy-free fallback path.
+   -- Publish requires a finite deadline and checks it in the composed guard.
    -- Reobserves the accepted native catalog and payload while holding the same
    -- publication/root reservations used for descriptor and journal validation.
    -- Every failure clears descriptor, catalog and payload together. CAS readers

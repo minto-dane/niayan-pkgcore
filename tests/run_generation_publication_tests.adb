@@ -13,7 +13,7 @@ with MC_Types; use MC_Types;
 with Pkg_Catalog_Retention; with Pkg_Catalog_Store; with Pkg_Deb_Metadata; with Pkg_Deb_Payload;
 with Pkg_Payload_Index; with Pkg_Selected_Catalog;
 with Pkg_Deb_Final_Set; with Pkg_Deb_Transition;
-with Pkg_File_Plan; with Pkg_Generation_Descriptor; with Pkg_Generation_Manifest;
+with Pkg_File_Plan; with Pkg_Generation_Descriptor; with Pkg_Generation_Manifest; with Pkg_Generation_Intent;
 with Pkg_Generation_Publisher; with Pkg_Generation_Stage; with Pkg_Managed_Engine; with Pkg_Root_State;
 with Resolver_Model; with Resolver_Admission; with Resolver_Wire;
 with Test_Support; use Test_Support;
@@ -22,6 +22,7 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    package FP renames Pkg_File_Plan; package CR renames MC_Config_Receipt;
    package NC renames Pkg_Selected_Catalog; package PX renames Pkg_Payload_Index;
    package DT renames Pkg_Deb_Transition;
+   package GI renames Pkg_Generation_Intent;
    package SB renames MC_Stop_Barrier; package RM renames Resolver_Model;
    use type Interfaces.C.int; use type Interfaces.C.unsigned;
    use type Interfaces.C.unsigned_long_long; use type Byte; use type GD.Descriptor;
@@ -305,8 +306,10 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
          MC_Atomic.Read (Check_State, "root.state", Snapshot, N, S); Need ("retain state before missing member");
          Expect (N = Snapshot'Length, "complete prior state");
       end if;
-      for I in 0 .. Count loop
-         if I = 0 then Object := M.Catalog_Closure; else Object := Closure (81 + 32 * (I - 1) .. 112 + 32 * (I - 1)); end if;
+      for I in 0 .. Count + 1 loop
+         if I = 0 then Object := M.Catalog_Closure;
+         elsif I = Count + 1 then Object := M.Intent;
+         else Object := Closure (81 + 32 * (I - 1) .. 112 + 32 * (I - 1)); end if;
          if Phase = 4 then Read_Native (Observation_Deadline); Need ("seed native result before loss"); end if;
          MC_FS.Rename (CAS, Object_Path (Object), "held-retention-object", True, S); Need ("hide retained object");
          case Phase is
@@ -426,23 +429,28 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       Legacy_Manifest, Legacy_Plan : Digest; Wire : Bytes (1 .. GM.Max_Bytes); N : Natural;
    begin
       MC_Store.Open (Store_Path, Store, S); Need ("structural-only publication fixture");
-      Legacy.Format := GM.Structural_V1; Legacy.Catalog_Closure := Zero_Digest;
-      Legacy.Transaction_ID := (others => 81);
-      GM.Load_Plan (Store, M, 1, Batch.all, S); Need ("retain native batch fixture");
-      Batch.Transaction_ID := GM.Transaction (Legacy, 1);
-      FP.Encode (Batch.all, B.all, N, S); Need ("encode valid structural batch");
-      MC_Store.Put (Store, B (1 .. N), Legacy.Batches (1).Plan, S); Need ("store structural batch");
-      GM.Check (Store, Legacy, S); Need ("legacy staging remains structurally valid");
-      GM.Encode (Legacy, Wire, N, S); Need ("legacy manifest encoding");
-      MC_Store.Put (Store, Wire (1 .. N), Legacy_Manifest, S); Need ("legacy manifest storage");
-      MC_Store.Pin (Store, Legacy.Transaction_ID, Legacy_Manifest, S); Need ("legacy immutable pin");
-      Descriptor.Manifest := Legacy_Manifest;
-      MC_Store.Put (Store, GD.Encode (Descriptor), Ignored, S); Need ("legacy descriptor storage");
-      GD.Compile (Before, Descriptor, (others => 82), 1, 2, Mark, Word (MC_Posix.Euid), Word (MC_Posix.Egid), Batch.all, S);
-      Need ("legacy descriptor plan"); FP.Encode (Batch.all, B.all, N, S); Need ("legacy publication encoding");
-      MC_Store.Put (Store, B (1 .. N), Legacy_Plan, S); Need ("legacy publication candidate"); MC_Store.Close (Store);
-      Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, Legacy_Plan, Receipt, Observation_Deadline, S);
-      Expect (S = Unsupported, "structurally valid v1 cannot bypass native publication retention");
+      for Format in GM.Structural_V1 .. GM.Native_V2 loop
+         Legacy := M; Legacy.Format := Format; Legacy.Intent := Zero_Digest;
+         if Format = GM.Structural_V1 then Legacy.Catalog_Closure := Zero_Digest; end if;
+         Legacy.Transaction_ID := (others => Byte (81 + GM.Format_Kind'Pos (Format)));
+         GM.Load_Plan (Store, M, 1, Batch.all, S); Need ("retain native batch fixture");
+         Batch.Transaction_ID := GM.Transaction (Legacy, 1);
+         FP.Encode (Batch.all, B.all, N, S); Need ("encode valid structural batch");
+         MC_Store.Put (Store, B (1 .. N), Legacy.Batches (1).Plan, S); Need ("store structural batch");
+         GM.Check (Store, Legacy, S); Need ("legacy staging remains structurally valid");
+         GM.Encode (Legacy, Wire, N, S); Need ("legacy manifest encoding");
+         MC_Store.Put (Store, Wire (1 .. N), Legacy_Manifest, S); Need ("legacy manifest storage");
+         MC_Store.Pin (Store, Legacy.Transaction_ID, Legacy_Manifest, S); Need ("legacy immutable pin");
+         Descriptor.Manifest := Legacy_Manifest;
+         MC_Store.Put (Store, GD.Encode (Descriptor), Ignored, S); Need ("legacy descriptor storage");
+         GD.Compile (Before, Descriptor, (others => Byte (84 + GM.Format_Kind'Pos (Format))), 1, 2, Mark, Word (MC_Posix.Euid), Word (MC_Posix.Egid), Batch.all, S);
+         Need ("legacy descriptor plan"); FP.Encode (Batch.all, B.all, N, S); Need ("legacy publication encoding");
+         MC_Store.Put (Store, B (1 .. N), Legacy_Plan, S); Need ("legacy publication candidate"); MC_Store.Close (Store);
+         Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, Legacy_Plan, Receipt, Observation_Deadline, S);
+         Expect (S = Unsupported, "legacy plan cannot bypass mandatory publication intent");
+         MC_Store.Open (Store_Path, Store, S); Need ("next legacy format fixture");
+      end loop;
+      MC_Store.Close (Store);
    exception when others => MC_Store.Close (Store); raise;
    end Check_Structural_Publication;
    procedure Check_Plan_Restrictions is
@@ -574,8 +582,10 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       MC_FS.Close (CAS); MC_FS.Close (State_Root);
    exception when others => MC_Store.Close (Store); MC_FS.Close (Lock); MC_FS.Close (CAS); MC_FS.Close (State_Root); raise;
    end Check_Update_Failures;
-   procedure Build (N : Positive) is
+   type Intent_Fault is (Unchanged, Damaged_Result, Wrong_Root, False_Initial);
+   procedure Build (N : Positive; Damage : Intent_Fault := Unchanged) is
       Wire : Bytes (1 .. GM.Max_Bytes); N_Bytes : Natural;
+      Variant : constant Natural := 30 * Intent_Fault'Pos (Damage);
       type UB_Access is access Bytes;
       UB : UB_Access := new Bytes (1 .. Resolver_Wire.Maximum_Universe_Bytes);
       procedure Free is new Ada.Unchecked_Deallocation (Bytes, UB_Access);
@@ -584,11 +594,25 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       if MC_Posix.Euid = 0 then
          MC_Store.Put (Store, Bytes'(123, Byte (N), 125), Catalog, S); Need ("root refusal fixture bytes");
       else Build_Native_Catalog (N); end if;
-      M := (Stage_ID => (others => Byte (40 + N)), Transaction_ID => (others => Byte (50 + N)),
+      M := (Stage_ID => (others => Byte (40 + N + Variant)), Transaction_ID => (others => Byte (50 + N + Variant)),
          Epoch => 1, Fence => 2, Catalog => Catalog, Effect_Contract => Mark, Entries => 3, Count => 1, others => <>);
       if MC_Posix.Euid /= 0 then
-         M.Format := GM.Native_V2;
+         M.Format := GM.Intent_V3;
          Pkg_Catalog_Retention.Prepare (Store, Catalog, Observation_Deadline, M.Catalog_Closure, S); Need ("native generation closure");
+         Pkg_Generation_Intent.Prepare (Store, Root_ID, Before, First_Closure, Catalog, M.Catalog_Closure,
+            "amd64", Enabled, Observation_Deadline, M.Intent, Ignored, S); Need ("native publication intent");
+         if Damage /= Unchanged then
+            MC_Store.Read_Object (Store, M.Intent, Wire, N_Bytes, S); Need ("retained intent fixture bytes");
+            case Damage is
+               when Damaged_Result => Wire (121) := Wire (121) xor 1;
+               when Wrong_Root => Wire (9 .. 24) := Boot;
+               when False_Initial => Wire (25 .. 56) := Zero_Digest;
+               when Unchanged => null;
+            end case;
+            MC_Store.Put (Store, Wire (1 .. N_Bytes), M.Intent, S); Need ("store untrusted intent fixture");
+            GI.Check_Target (Store, M.Intent, Catalog, M.Catalog_Closure, Observation_Deadline, S);
+            Need ("malformed meaning remains structurally target-linked");
+         end if;
       end if;
       FP.Clear (Batch.all); Batch.Root_ID := M.Stage_ID; Batch.Transaction_ID := GM.Transaction (M, 1);
       Batch.Target_Generation := 1; Batch.Epoch := 1; Batch.Fence := 2;
@@ -610,14 +634,14 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       After := (Root_ID, M.Stage_ID, Manifest_Hash, Catalog, Counter (N),
          (if N = 1 then Zero_Digest else MC_SHA256.Hash (GD.Encode (Before))));
       MC_Store.Put (Store, GD.Encode (After), Ignored, S); Need ("descriptor CAS");
-      GD.Compile (Before, After, (others => Byte (60 + N)), 1, 2, Mark,
+      GD.Compile (Before, After, (others => Byte (60 + N + Variant)), 1, 2, Mark,
          Word (MC_Posix.Euid), Word (MC_Posix.Egid), P.all, S); Need ("compile publication");
       Save_Plan; MC_Store.Close (Store);
       declare Path : constant String := GD.Stage_Path (Bank, After); begin
          Ada.Directories.Create_Directory (Path);
          Ada.Directories.Create_Directory (Path & "/root"); Ada.Directories.Create_Directory (Path & "/state");
          if MC_Posix.Euid /= 0 then
-            Check_Missing_Retention (0, Wire (1 .. N_Bytes));
+            if Damage = Unchanged then Check_Missing_Retention (0, Wire (1 .. N_Bytes)); end if;
             Stage.Provision (Path & "/root", Path & "/state", Store_Path, Wire (1 .. N_Bytes), Manifest_Hash, Observation_Deadline, S);
             Need ("provision selected stage");
          end if;
@@ -629,12 +653,112 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       Resolver_Wire.Encode (U0.all, UB.all, N_Bytes, S); Need ("encode closed synthetic universe");
       Universe_Hash := MC_SHA256.Hash (UB (1 .. N_Bytes)); Free (UB);
    end Build;
-   procedure Complete_Stage is
+   procedure Complete_Stage (Exercise_Retention : Boolean := True) is
       Path : constant String := GD.Stage_Path (Bank, After);
    begin
-      Check_Missing_Retention (1);
+      if Exercise_Retention then Check_Missing_Retention (1); end if;
       Stage.Advance (Path & "/root", Path & "/state", Store_Path, Manifest_Hash, Completed, Observation_Deadline, S);
       Need ("assemble selected stage"); Expect (Completed = 1, "single private batch complete"); end Complete_Stage;
+   procedure Check_Intent_Inputs is
+      Wire, Damaged : Bytes (1 .. 512) := (others => 0); N, Length : Natural;
+      Address, Binding, Saved, Saved_Binding : Digest;
+      Policy : Pkg_Deb_Final_Set.Architecture_List (3 .. 4); Swap : MC_Text.Value;
+   begin
+      MC_Store.Open (Store_Path, Store, S); Need ("intent input fixture CAS");
+      MC_Store.Read_Object (Store, M.Intent, Wire, N, S); Need ("read prepared intent");
+      Expect (N = 206, "one native architecture intent framing");
+      GI.Verify (Store, M.Intent, Root_ID, Before, First_Closure, Catalog, M.Catalog_Closure,
+         Observation_Deadline, Binding, S); Need ("verify retained ordinary intent");
+      Expect (Binding = Wire (153 .. 184), "verified intent returns its bound native result");
+      GI.Prepare (Store, Root_ID, Before, First_Closure, Catalog, M.Catalog_Closure,
+         "amd64", Enabled, Observation_Deadline, Address, Binding, S); Need ("reprepare ordinary intent");
+      Expect (Address = M.Intent and then Binding = Wire (153 .. 184), "identical input reproduces exact intent object");
+      MC_Text.Set (Policy (3), "arm64", S); Need ("alternate enabled policy");
+      MC_Text.Set (Policy (4), "amd64", S); Need ("native enabled policy");
+      GI.Prepare (Store, Root_ID, Before, First_Closure, Catalog, M.Catalog_Closure,
+         "amd64", Policy, Observation_Deadline, Saved, Saved_Binding, S); Need ("canonical multi-architecture intent");
+      Swap := Policy (3); Policy (3) := Policy (4); Policy (4) := Swap;
+      GI.Prepare (Store, Root_ID, Before, First_Closure, Catalog, M.Catalog_Closure,
+         "amd64", Policy, Observation_Deadline, Address, Binding, S); Need ("reordered architecture intent");
+      Expect (Address = Saved and then Binding = Saved_Binding and then Address /= M.Intent,
+         "canonical architecture order is reproducible and binds every enabled architecture");
+      Policy (4) := Policy (3); Address := Mark; Binding := Mark;
+      GI.Prepare (Store, Root_ID, Before, First_Closure, Catalog, M.Catalog_Closure,
+         "amd64", Policy, Observation_Deadline, Address, Binding, S);
+      Expect (S = Invalid_Input and then Address = Zero_Digest and then Binding = Zero_Digest, "duplicate policy clears preparation outputs");
+      for Case_Number in 1 .. 26 loop
+         Damaged := Wire; Length := N;
+         case Case_Number is
+            when 1 => Damaged (8) := 50;
+            when 2 => Damaged (9 .. 24) := Zero_Identity;
+            when 3 => Damaged (57 .. 88) := Zero_Digest;
+            when 4 => Damaged (89 .. 120) := Zero_Digest;
+            when 5 => Damaged (121 .. 152) := Zero_Digest;
+            when 6 => Damaged (153 .. 184) := Zero_Digest;
+            when 7 => MC_Codec.Put32 (Damaged, 185, 0);
+            when 8 => MC_Codec.Put32 (Damaged, 185, 4_097);
+            when 9 => MC_Codec.Put32 (Damaged, 189, 0);
+            when 10 => MC_Codec.Put32 (Damaged, 189, 257);
+            when 11 => Length := 191;
+            when 12 => Length := N + 1;
+            when 13 => MC_Codec.Put32 (Damaged, 198, 0);
+            when 14 => MC_Codec.Put32 (Damaged, 198, 4_097);
+            when 15 => Length := N - 1;
+            when 16 => Damaged (9 .. 24) := Boot;
+            when 17 => Damaged (25 .. 56) := Zero_Digest;
+            when 18 => Damaged (57 .. 88) := Mark;
+            when 19 => Damaged (89 .. 120) := Mark;
+            when 20 => Damaged (121) := Damaged (121) xor 1;
+            when 21 => Damaged (153) := Damaged (153) xor 1;
+            when 22 => Damaged (194 .. 195) := Bytes'(114, 109); -- arm64 native, amd64 enabled
+            when 23 => Damaged (203 .. 204) := Bytes'(114, 109); -- amd64 native, arm64 enabled
+            when 24 .. 26 =>
+               MC_Codec.Put32 (Damaged, 189, 2); Length := N + 9;
+               Damaged (N + 1 .. N + 9) := Wire (198 .. 206);
+               if Case_Number = 25 then Damaged (203 .. 204) := Bytes'(114, 109); end if;
+               if Case_Number = 26 then Damaged (212 .. 213) := Bytes'(114, 109); end if;
+            when others => raise Program_Error;
+         end case;
+         MC_Store.Put (Store, Damaged (1 .. Length), Address, S); Need ("store invalid intent fixture"); Binding := Mark;
+         GI.Verify (Store, Address, Root_ID, Before, First_Closure, Catalog, M.Catalog_Closure,
+            Observation_Deadline, Binding, S);
+         Ada.Text_IO.Put_Line ("INTENT_REJECT" & Natural'Image (Case_Number) & " " & Outcome'Image (S));
+         Expect (S /= OK and then Binding = Zero_Digest, "invalid intent never retains a successful binding");
+      end loop;
+      Binding := Mark; GI.Verify (Store, M.Intent, Root_ID, Before, First_Closure, Catalog, M.Catalog_Closure, 0, Binding, S);
+      Expect (S = Stale and then Binding = Zero_Digest, "expired intent observation clears binding");
+      GI.Verify (Store, M.Intent, Root_ID, Before, First_Closure, Catalog, M.Catalog_Closure, Counter'Last, Binding, S);
+      Expect (S = Invalid_Input and then Binding = Zero_Digest, "intent observation requires a finite deadline");
+      for Unbounded in Boolean loop
+         Address := Mark; Binding := Mark;
+         GI.Prepare (Store, Root_ID, Before, First_Closure, Catalog, M.Catalog_Closure,
+            "amd64", Enabled, (if Unbounded then Counter'Last else 0), Address, Binding, S);
+         Expect (S = (if Unbounded then Invalid_Input else Stale) and then Address = Zero_Digest and then Binding = Zero_Digest,
+            "intent preparation requires a live finite deadline and clears both outputs");
+      end loop;
+      MC_Store.Close (Store);
+   exception when others => MC_Store.Close (Store); raise;
+   end Check_Intent_Inputs;
+   procedure Check_Intent_Publication is
+      Accepted : constant GD.Descriptor := After;
+      Accepted_Closure : constant Digest := M.Catalog_Closure;
+      Snapshot, Latest : Pkg_Root_State.Frame; N, Calls : Natural;
+   begin
+      MC_Atomic.Read (State, "root.state", Snapshot, N, S); Need ("state before rejected native intents");
+      Before := Accepted; First_Closure := Accepted_Closure;
+      for Damage in Damaged_Result .. False_Initial loop
+         Build (3, Damage); Complete_Stage (False); Calls := Native_Calls;
+         Publish;
+         Ada.Text_IO.Put_Line ("INTENT_PUBLICATION " & Intent_Fault'Image (Damage) & " " & Outcome'Image (S));
+         Expect (S = (if Damage = Damaged_Result then Conflict else Denied), "untrusted intent cannot publish a generation");
+         Expect (Native_Calls = Calls, "native intent is checked before executing managed publication");
+         MC_Atomic.Read (State, "root.state", Latest, N, S); Need ("state after rejected intent");
+         Expect (N = Latest'Length and then Latest = Snapshot, "rejected intent leaves exact accepted state unchanged");
+         MC_Atomic.Read (Root, "generation.next", B.all, N, S); Need ("candidate after rejected intent");
+         GD.Decode (B (1 .. N), Current, S); Need ("retained published descriptor");
+         Expect (Current = Accepted, "rejected intent cannot replace the current pointer workspace");
+      end loop;
+   end Check_Intent_Publication;
    procedure Commit_Window (Published, Finished : Boolean) is
       RS : Pkg_Root_State.State; Frame : Pkg_Root_State.Frame; N : Natural;
       Last : MC_Log_Format.Log_Entry; Last_Frame : MC_Log_Format.Frame;
@@ -683,6 +807,13 @@ begin
       Other := After; Other.Stage_ID := Other.Root_ID; Expect (not GD.Valid (Other), "stage and publication roots must differ");
    end;
    if MC_Posix.Euid = 0 then
+      GI.Prepare (Store, Root_ID, Before, First_Closure, Catalog, M.Catalog_Closure,
+         "amd64", Enabled, Observation_Deadline, Ignored, Update_Binding, S);
+      Expect (S = Denied and then Ignored = Zero_Digest and then Update_Binding = Zero_Digest, "root intent preparation refused");
+      GI.Verify (Store, Mark, Root_ID, Before, First_Closure, Catalog, M.Catalog_Closure, Observation_Deadline, Update_Binding, S);
+      Expect (S = Denied and then Update_Binding = Zero_Digest, "root intent verification refused");
+      GI.Check_Target (Store, Mark, Catalog, M.Catalog_Closure, Observation_Deadline, S);
+      Expect (S = Denied, "root intent metadata read refused");
       Publisher.Provision (Root_Path, State_Path, Root_ID, Grant, S); Expect (S = Denied, "root publication provision refused");
       Publish; Expect (S = Denied, "root publication refused");
       Read_Current; Expect (S = Denied and then Current = GD.Empty, "root readback refused"); Report; return;
@@ -822,6 +953,7 @@ begin
       MC_FS.Close (CAS);
    exception when others => MC_FS.Close (Lock); MC_FS.Close (CAS); raise;
    end;
+   Check_Intent_Inputs; Check_Intent_Publication;
    MC_FS.Close (Root); MC_FS.Close (State); Report;
 exception when others => MC_Store.Close (Store); MC_FS.Close (Root); MC_FS.Close (State); raise;
 end Run_Generation_Publication_Tests;

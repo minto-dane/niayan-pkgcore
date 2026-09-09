@@ -31,7 +31,7 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
    begin
       Time_Left (Deadline, Status);
       if Status = OK then GM.Check (Store, M, Status); end if;
-      if Status = OK and then M.Format = GM.Native_V2 then GM.Check_Retention (Store, M, Deadline, Status); end if;
+      if Status = OK and then M.Format /= GM.Structural_V1 then GM.Check_Retention (Store, M, Deadline, Status); end if;
       if Status = OK then Time_Left (Deadline, Status); end if;
    end Check_Content;
    procedure Read_Binding (R : MC_FS.Root; Expected : Digest; M : out GM.Manifest; Status : out Outcome) is

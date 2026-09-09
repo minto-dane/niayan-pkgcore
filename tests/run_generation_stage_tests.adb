@@ -11,7 +11,7 @@ procedure Run_Generation_Stage_Tests with SPARK_Mode => Off is
    package FP renames Pkg_File_Plan;
    use type Interfaces.C.unsigned;
    use type Interfaces.C.int;
-   use type GM.Manifest; use type MC_FS.Entry_Kind;
+   use type GM.Manifest; use type MC_FS.Entry_Kind; use type Byte;
    M, Decoded, Bad : GM.Manifest;
    Manifest_Digest, Attrs, Payload, Catalog, Receipt, Ignored : Digest;
    Deadline : Counter := 0;
@@ -159,12 +159,26 @@ begin
       Expect (S = Invalid_Input and then Readback = GM.Manifest'(others => <>), "native header cannot be relabeled as v1");
       Damaged := Wire; Damaged (129 .. 160) := Zero_Digest; GM.Decode (Damaged (1 .. Size), Readback, S);
       Expect (S = Invalid_Input and then Readback = GM.Manifest'(others => <>), "missing closure clears decoded output");
-      Damaged := Wire; Damaged (8) := 51; GM.Decode (Damaged (1 .. Size), Readback, S);
+      Damaged := Wire; Damaged (8) := 52; GM.Decode (Damaged (1 .. Size), Readback, S);
       Expect (S = Unsupported and then Readback = GM.Manifest'(others => <>), "unknown profile cannot downgrade");
       Native.Format := GM.Structural_V1; Expect (not GM.Valid (Native), "v1 must keep reserved bytes zero");
       GM.Check_Retention (Store, M, Deadline, S); Expect (S = Unsupported, "v1 is not native retention evidence");
       Native.Format := GM.Native_V2; GM.Check_Retention (Store, Native, Counter'Last, S);
       Expect (S = Invalid_Input, "unbounded retention deadline refused");
+      Native.Format := GM.Intent_V3;
+      Expect (not GM.Valid (Native), "v3 requires a publication intent");
+      Native.Intent := (others => 92); GM.Encode (Native, Wire, Size, S); Need ("encode publication intent reference");
+      Expect (Size = GM.Intent_Header_Size + 64 * Native.Count and then Wire (8) = 51
+         and then Wire (161 .. 192) = Native.Intent, "v3 extends the header explicitly");
+      GM.Decode (Wire (1 .. Size), Readback, S); Need ("decode publication intent header");
+      Expect (Readback = Native, "v3 round trip retains every field");
+      Expect (MC_Hex.Encode (GM.Transaction (Native, 1)) = "ee2e8c68d84cd77a0a9d9b0f786945fa",
+         "v3 transaction matches independent versioned vector");
+      Damaged := Wire; Damaged (161 .. 192) := Zero_Digest; GM.Decode (Damaged (1 .. Size), Readback, S);
+      Expect (S = Invalid_Input and then Readback = GM.Manifest'(others => <>), "missing intent clears decoded result");
+      Damaged := Wire; Damaged (8) := 50; GM.Decode (Damaged (1 .. Size), Readback, S);
+      Expect (S = Invalid_Input and then Readback = GM.Manifest'(others => <>), "v3 cannot downgrade by relabeling");
+      Native.Format := GM.Native_V2; Expect (not GM.Valid (Native), "v2 cannot silently acquire an intent field");
    end;
    Manifest_Digest := MC_SHA256.Hash (Encoded (1 .. Manifest_Used)); MC_Store.Close (Store);
    if MC_Posix.Euid = 0 then

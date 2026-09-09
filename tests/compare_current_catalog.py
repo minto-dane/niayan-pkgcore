@@ -47,11 +47,11 @@ def check(root, state, cas, bank, media, native):
     before, after = descriptor(cas,before_hash), descriptor(cas,after_hash)
     assert after['previous'] == before_hash and before['previous'] == bytes(32)
     assert after['catalog'] == raw[112:144] == plan[72:104]
-    expected = {}; closures = {}; missing = Counter(); sources = {}; retained_hashes = {}
+    expected = {}; closures = {}; missing = Counter(); sources = {}; retained_hashes = {}; intents = {}
     for d, name, generation in [(before,'empty.deb',1),(after,'consumer-upgrade.deb',2)]:
         assert d['root'] == root_id and d['generation'] == generation
         manifest = cas_read(cas,d['manifest'])
-        assert len(manifest) == 224 and manifest[:8] == b'NIAGEN02'
+        assert len(manifest) == 256 and manifest[:8] == b'NIAGEN03'
         assert manifest[8:24] == d['stage'] and manifest[56:88] == d['catalog']
         index, frame = reference(media,[name]); assert sha(frame) == d['catalog']
         assert cas_read(cas,d['catalog']) == frame
@@ -62,15 +62,22 @@ def check(root, state, cas, bank, media, native):
         assert (cas/'pins'/manifest[24:40].hex()).read_bytes() == d['manifest']
         for digest, data in retained.items(): assert cas_read(cas,digest) == data
         closures[generation] = dict(hash=sha(closure).hex(), objects=len(retained))
+        intent_hash = manifest[160:192]; intent = cas_read(cas, intent_hash)
+        assert len(intent) == 206 and intent[:8] == b'NIAGINT1'
+        assert intent[8:24] == root_id and intent[24:56] == d['previous']
+        assert intent[56:88] == d['catalog'] and intent[88:120] == sha(closure)
+        assert intent[184:192] == struct.pack('>II', 5, 1)
+        assert intent[192:] == b'amd64' + struct.pack('>I', 5) + b'amd64'
+        intents[generation] = dict(hash=intent_hash.hex(), native_result=intent[120:152].hex(), binding=intent[152:184].hex())
         package, relationships, atoms = read_original(media/name)
         assert not atoms and all(int(row[2]) == 0 for row in relationships)
         sources[d['catalog'].hex()] = package
         retained_hashes[generation] = [sha(closure).hex(), *[h.hex() for h in retained]]
         for phase in range(5 if generation == 2 else 4):
-            missing.update((str(phase), digest.hex()) for digest in [sha(closure), *retained])
-        batch = cas_read(cas,manifest[160:192])
+            missing.update((str(phase), digest.hex()) for digest in [sha(closure), intent_hash, *retained])
+        batch = cas_read(cas,manifest[192:224])
         assert batch[:8] == b'MCPLAN02' and batch[8:24] == d['stage']
-        assert batch[24:40] == sha(b'NIAGEN02' + manifest[24:40] + struct.pack('>I',1))[:16]
+        assert batch[24:40] == sha(b'NIAGEN03' + manifest[24:40] + struct.pack('>I',1))[:16]
         assert batch[72:104] == d['catalog']
         stage_root = bank/d['stage'].hex()/'root'
         assert (stage_root/'catalog').read_bytes() == frame
@@ -122,12 +129,24 @@ def check(root, state, cas, bank, media, native):
         bindings[binding] = dict(current=current, target=new_catalog, retention=retained, endpoint=endpoint, transition=delta, changes=len(records))
     assert changes == expected_changes
     assert pairs == {(d['hash'].hex(), t['catalog'].hex()) for d in [before, after] for t in [before, after]}
+    initial_endpoint = sha(field('NIADFINAL1') + before['catalog'] + policy)
+    assert intents[1]['native_result'] == initial_endpoint.hex()
+    assert intents[1]['binding'] == sha(b'NIAINI01' + root_id + before['catalog'] + bytes.fromhex(closures[1]['hash']) + initial_endpoint).hex()
+    forward = [(binding, value) for binding, value in bindings.items() if value['current'] == before_hash.hex() and value['target'] == after['catalog'].hex()]
+    assert len(forward) == 1
+    assert (intents[2]['binding'], intents[2]['native_result']) == (forward[0][0], forward[0][1]['transition'])
+    rejected = [line.split()[1:] for line in lines if line.startswith('INTENT_REJECT ')]
+    assert len(rejected) == 26 and {int(row[0]) for row in rejected} == set(range(1, 27))
+    assert all(len(row) == 2 and row[1] != 'OK' for row in rejected)
+    refused_publications = [line.split()[1:] for line in lines if line.startswith('INTENT_PUBLICATION ')]
+    assert sorted(refused_publications) == [['DAMAGED_RESULT', 'CONFLICT'], ['FALSE_INITIAL', 'DENIED'], ['WRONG_ROOT', 'DENIED']]
     update_missing = [line.split()[1:] for line in lines if line.startswith('UPDATE_MISSING ')]
     assert all(len(row) == 2 and row[1] not in {'OK', 'CONFLICT'} for row in update_missing)
     assert Counter(row[0] for row in update_missing) == Counter(retained_hashes[2])
     return dict(result='pass-for-two-published-native-catalog-observations',root=root_id.hex(),accepted_plan=raw[80:112].hex(),
                 observations=len(rows),missing_retention_checks=len(faults),generations=[dict(generation=g,descriptor=v[0],catalog=v[2],payload=v[3],claims=int(v[5]),retention=closures[g]) for g,v in expected.items()],
                 update_observations=len(updates),update_bindings=bindings,missing_update_objects=len(update_missing),
+                publication_intents=intents,intent_reject_cases=len(rejected),intent_publication_rejections=len(refused_publications),
                 physical_deb_payload_applied=False,production_authorization=False)
 
 if __name__ == '__main__':
