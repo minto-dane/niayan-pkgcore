@@ -84,3 +84,7 @@ mkdir -p "$D/run_deb_payload_tests"
 mkdir -p "$D/"run_deb_payload_tests/store
 echo 'Running run_deb_payload_tests'
 timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_deb_payload_tests" "$D/"run_deb_payload_tests/store "$PWD/"tests/fixtures/deb-payload
+mkdir -p "$D/run_payload_index_tests"
+mkdir -p "$D/"run_payload_index_tests/store
+echo 'Running run_payload_index_tests'
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_payload_index_tests" "$D/"run_payload_index_tests/store "$PWD/"tests/fixtures/deb-payload "$PWD/"tests/fixtures/payload-index
