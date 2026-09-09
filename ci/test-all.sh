@@ -76,3 +76,7 @@ timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UT
 mkdir -p "$D/run_deb_relations_tests"
 echo 'Running run_deb_relations_tests'
 timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_deb_relations_tests"
+mkdir -p "$D/run_deb_data_stream_tests"
+mkdir -p "$D/"run_deb_data_stream_tests/store
+echo 'Running run_deb_data_stream_tests'
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_deb_data_stream_tests" "$D/"run_deb_data_stream_tests/store "$PWD/"tests/fixtures/deb-data

@@ -1,0 +1,260 @@
+[
+  {
+    "filename": "payload.raw",
+    "sha256": "88e2326f6f867ac3a62ae6dad9e8fdce407519c4d0d3d388b9fa6f4f37053571",
+    "size": 143360,
+    "accepted": null
+  },
+  {
+    "filename": "plain.encoded",
+    "sha256": "88e2326f6f867ac3a62ae6dad9e8fdce407519c4d0d3d388b9fa6f4f37053571",
+    "size": 143360,
+    "accepted": null
+  },
+  {
+    "filename": "valid-plain.deb",
+    "sha256": "229354d263e72bb9c38268727a2947d413fff2df41d664d8ba7915bbfe36347f",
+    "size": 153792,
+    "accepted": true
+  },
+  {
+    "filename": "empty-plain.encoded",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0,
+    "accepted": null
+  },
+  {
+    "filename": "gzip.encoded",
+    "sha256": "1c981ece2f88caba6e4a953d1d638ece041dd73b13db7ee7d8338e00c22f4450",
+    "size": 1689,
+    "accepted": null
+  },
+  {
+    "filename": "valid-gzip.deb",
+    "sha256": "137681a3cf0a0e809e65da1314a9c0a5da73c3352117d0d54a9290fbb591b381",
+    "size": 12122,
+    "accepted": true
+  },
+  {
+    "filename": "empty-gzip.encoded",
+    "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+    "size": 20,
+    "accepted": null
+  },
+  {
+    "filename": "truncated-gzip.deb",
+    "sha256": "11ad7f6ed9531bf51ac13ec671e3824f1c7fb3e22dea9959405c5b83420ef03a",
+    "size": 12120,
+    "accepted": false
+  },
+  {
+    "filename": "trailing-gzip.deb",
+    "sha256": "579b2a7cf11dcc865787e25b6c7b0c19fd407f5e0e8aa043c18b254937d13551",
+    "size": 12122,
+    "accepted": false
+  },
+  {
+    "filename": "concatenated-gzip.deb",
+    "sha256": "c6fa665ed1036b315e459a1e96deb3aa4f7dc4d2eeac474ce2f184f5a7e7df9f",
+    "size": 13810,
+    "accepted": false
+  },
+  {
+    "filename": "missing-gzip.deb",
+    "sha256": "33958f8b4a7baf77018f03e27833631ab534be7528abd22091e77e879ff3bf53",
+    "size": 10432,
+    "accepted": false
+  },
+  {
+    "filename": "bad-integrity-gzip.deb",
+    "sha256": "92baf208245c6e3b4966d01c65c4d9cd68262d2286fcad6554ee02501d2746c4",
+    "size": 12122,
+    "accepted": false
+  },
+  {
+    "filename": "bzip2.encoded",
+    "sha256": "b9f4891db00dbd5fac167eddeebbfabc565f8a4f7d29b200a2cc7afcbca0a0ac",
+    "size": 1324,
+    "accepted": null
+  },
+  {
+    "filename": "valid-bzip2.deb",
+    "sha256": "62c60642cd2318bcd560716a57327777306f07faa2779bfca2adca8e43931714",
+    "size": 11756,
+    "accepted": true
+  },
+  {
+    "filename": "empty-bzip2.encoded",
+    "sha256": "d3dda84eb03b9738d118eb2be78e246106900493c0ae07819ad60815134a8058",
+    "size": 14,
+    "accepted": null
+  },
+  {
+    "filename": "truncated-bzip2.deb",
+    "sha256": "015e7e5bf2238c89c2b5b21632adbd323445b1ae92d7d9ec956cb1129d532422",
+    "size": 11756,
+    "accepted": false
+  },
+  {
+    "filename": "trailing-bzip2.deb",
+    "sha256": "f2ab376e69375eb6acd53163cb8b01048a5a334750f5229c11f28a18d8a75142",
+    "size": 11758,
+    "accepted": false
+  },
+  {
+    "filename": "concatenated-bzip2.deb",
+    "sha256": "0dcd7db3182fa76ebeb2692dd0d8294c3c87a3eb19301ae6d510066ea8d4a5d9",
+    "size": 13080,
+    "accepted": false
+  },
+  {
+    "filename": "missing-bzip2.deb",
+    "sha256": "664122fc2834a9c442a284f3a6af9f5322cdf0163ffe5a026c3df3763ce68eaf",
+    "size": 10432,
+    "accepted": false
+  },
+  {
+    "filename": "bad-integrity-bzip2.deb",
+    "sha256": "8281ed77b03f1a56b9b2956cdbf601303a27090114396c5bed8ad6d2c4e525bd",
+    "size": 11756,
+    "accepted": false
+  },
+  {
+    "filename": "lzma.encoded",
+    "sha256": "7f2cbbbbd8898e560213f1001563b52c82066071796ba1346ebc33ec7f08946d",
+    "size": 707,
+    "accepted": null
+  },
+  {
+    "filename": "valid-lzma.deb",
+    "sha256": "66f7e462d51f06fa0a88c5e49a4b397ccc2be0a0735379831627e52d3e0582c8",
+    "size": 11140,
+    "accepted": true
+  },
+  {
+    "filename": "empty-lzma.encoded",
+    "sha256": "b8d8686989e9c36d659dddb4f0c7e800c778cf973adf59fc3e1022bfeaac4874",
+    "size": 23,
+    "accepted": null
+  },
+  {
+    "filename": "truncated-lzma.deb",
+    "sha256": "bd053bbb8bd0d1ea73c1427937c865515d829c02b7adfb536f44d854a059feac",
+    "size": 11138,
+    "accepted": false
+  },
+  {
+    "filename": "trailing-lzma.deb",
+    "sha256": "940d203898ee89526da46d2465d4f6ca73d833388f0abb6021a363b56bf0f775",
+    "size": 11140,
+    "accepted": false
+  },
+  {
+    "filename": "concatenated-lzma.deb",
+    "sha256": "9b1adae06f712f1fb34ed36b45ae50c2387aeaf15d02559bf9ea29b16c38e8e2",
+    "size": 11846,
+    "accepted": false
+  },
+  {
+    "filename": "missing-lzma.deb",
+    "sha256": "26f6d68326539dada049601166ca426ace760c3449e6444fcc54bc59abe5a39c",
+    "size": 10432,
+    "accepted": false
+  },
+  {
+    "filename": "xz.encoded",
+    "sha256": "b285ebad140329b270427d4f0e6af58cfd2c3cf8f8a1cff59bd77a855631142c",
+    "size": 752,
+    "accepted": null
+  },
+  {
+    "filename": "valid-xz.deb",
+    "sha256": "59de3baa0e3a1b424f8004cc0e67b6f287e8ab190223b00114359b861d4fd99c",
+    "size": 11184,
+    "accepted": true
+  },
+  {
+    "filename": "empty-xz.encoded",
+    "sha256": "0040f94d11d0039505328a90b2ff48968db873e9e7967307631bf40ef5679275",
+    "size": 32,
+    "accepted": null
+  },
+  {
+    "filename": "truncated-xz.deb",
+    "sha256": "4216fc1777511e8fabea8a2f3bd93df92c1073d88ac5915e29da77b870ca57cc",
+    "size": 11184,
+    "accepted": false
+  },
+  {
+    "filename": "trailing-xz.deb",
+    "sha256": "4fbab9a484f16c99a2ba0ba03c9e5cfa46f61e54d86221c1825d09430d86b0c6",
+    "size": 11186,
+    "accepted": false
+  },
+  {
+    "filename": "concatenated-xz.deb",
+    "sha256": "6542a815efeae150c7ac792727cd56312fcf1773c6129647794e375fb6027f19",
+    "size": 11936,
+    "accepted": false
+  },
+  {
+    "filename": "missing-xz.deb",
+    "sha256": "c11fc408c316e5849ba61a745c883360736fc24f0ea40d681baeea327a96cc5b",
+    "size": 10432,
+    "accepted": false
+  },
+  {
+    "filename": "bad-integrity-xz.deb",
+    "sha256": "abed468b644d8701be0801d19240bc172a7351e26ba895f38409954b65ea40d1",
+    "size": 11184,
+    "accepted": false
+  },
+  {
+    "filename": "zstd.encoded",
+    "sha256": "f505a1539016a2352a412186ae1faf5ad1b4c6f14141f59309edd6af3f34eff2",
+    "size": 1181,
+    "accepted": null
+  },
+  {
+    "filename": "valid-zstd.deb",
+    "sha256": "bda4d1cb7e0a2d011e1d00df24610a722d4565a987708f5c6340d73a632ffb30",
+    "size": 11614,
+    "accepted": true
+  },
+  {
+    "filename": "empty-zstd.encoded",
+    "sha256": "f96deff1816083fdff8bc3e46c3fe6ca46a6bb49f4d5a00627616c13237a512c",
+    "size": 13,
+    "accepted": null
+  },
+  {
+    "filename": "truncated-zstd.deb",
+    "sha256": "fde3229234d82a09a107d5b2d1e4a5aac133350aaa449dbf53e78870e7d26a3a",
+    "size": 11612,
+    "accepted": false
+  },
+  {
+    "filename": "trailing-zstd.deb",
+    "sha256": "f5d53d69f0bf760240262940a397095832f0a79ac9115783aef2bd559aea969b",
+    "size": 11614,
+    "accepted": false
+  },
+  {
+    "filename": "concatenated-zstd.deb",
+    "sha256": "26b3950af54df6f01ce3811a416f1069380e20da0a24905bd0ac3d8edaeeb1a7",
+    "size": 12794,
+    "accepted": false
+  },
+  {
+    "filename": "missing-zstd.deb",
+    "sha256": "b6bb67dbb1b49c8a40970e8c7356114ee49ae331d76b0c010602609709a8bf22",
+    "size": 10432,
+    "accepted": false
+  },
+  {
+    "filename": "bad-integrity-zstd.deb",
+    "sha256": "9f26a22d23049dd38ddbdd22fd65aba2266601cb3458f879ee7fd98172148b45",
+    "size": 11614,
+    "accepted": false
+  }
+]

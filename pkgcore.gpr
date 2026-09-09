@@ -11,6 +11,6 @@ project Pkgcore is
    end Compiler;
    package Linker is
       for Default_Switches ("Ada") use
-        ("-lsodium", "-larchive", "-lz", "-llzma", "-lzstd", "-lcurl", "-lxml2", "-pie", "-Wl,-z,relro,-z,now,-z,noexecstack");
+        ("-lsodium", "-larchive", "-lz", "-lbz2", "-llzma", "-lzstd", "-lcurl", "-lxml2", "-pie", "-Wl,-z,relro,-z,now,-z,noexecstack");
    end Linker;
 end Pkgcore;
