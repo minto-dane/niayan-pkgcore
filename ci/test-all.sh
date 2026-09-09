@@ -8,6 +8,7 @@ cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 D=$(mktemp -d "${TMPDIR:-/tmp}/nia-tests.XXXXXXXX")
 trap 'rm -rf -- "$D"' EXIT HUP INT TERM
 python3 "$PWD/tests/make_deb_final_set_fixtures.py" --check
+python3 "$PWD/tests/make_deb_transition_fixtures.py" --check
 mkdir -p "$D/run_file_replay_tests"
 echo 'Running run_file_replay_tests'
 timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_file_replay_tests"
@@ -103,4 +104,14 @@ else
   exit 1
 fi
 python3 "$PWD/tests/compare_deb_final_set.py" --media "$PWD/tests/fixtures/deb-final-set" --native "$D/final-set-native.log" --output "$D/final-set-native-oracle.json"
+mkdir -p "$D/run_deb_transition_tests"
+mkdir -p "$D/"run_deb_transition_tests/store
+echo 'Running run_deb_transition_tests'
+if timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_deb_transition_tests" "$D/"run_deb_transition_tests/store "$PWD/"tests/fixtures/deb-transition > "$D/transition-native.log" 2>&1; then
+  cat "$D/transition-native.log"
+else
+  cat "$D/transition-native.log"
+  exit 1
+fi
+python3 "$PWD/tests/compare_deb_transition.py" --media "$PWD/tests/fixtures/deb-transition" --native "$D/transition-native.log" --output "$D/transition-native-oracle.json"
 timeout --kill-after=5s 600s python3 "$PWD/tests/check_deb_final_set_upstream.py" --media "$PWD/tests/fixtures/deb-final-set" --work "$D/upstream-endpoint"
