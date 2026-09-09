@@ -10,6 +10,7 @@ test -x build/test-bin/run_generation_publication_tests
 test -x build/test-bin/run_deb_payload_tests
 test -x build/test-bin/run_payload_index_tests
 test -x build/test-bin/run_selected_catalog_tests
+test -x build/test-bin/run_deb_final_set_tests
 umask 077
 nia_stage_test_dir=$(mktemp -d /tmp/nia-stage-root-test.XXXXXXXX)
 trap 'rm -rf -- "$nia_stage_test_dir"' EXIT HUP INT TERM
@@ -37,3 +38,7 @@ timeout --kill-after=5s 600s env -i PATH=/usr/bin:/bin HOME="$nia_stage_test_dir
   TMPDIR="$nia_stage_test_dir" LANG=C.UTF-8 LC_ALL=C.UTF-8 \
   "$PWD/build/test-bin/run_selected_catalog_tests" "$nia_stage_test_dir/store" \
   "$PWD/tests/fixtures/selected-catalog"
+timeout --kill-after=5s 600s env -i PATH=/usr/bin:/bin HOME="$nia_stage_test_dir" \
+  TMPDIR="$nia_stage_test_dir" LANG=C.UTF-8 LC_ALL=C.UTF-8 \
+  "$PWD/build/test-bin/run_deb_final_set_tests" "$nia_stage_test_dir/store" \
+  "$PWD/tests/fixtures/deb-final-set"

@@ -7,6 +7,7 @@ cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 [ "$(id -u)" -ne 0 ] || { echo "Use an unprivileged build user" >&2; exit 78; }
 D=$(mktemp -d "${TMPDIR:-/tmp}/nia-tests.XXXXXXXX")
 trap 'rm -rf -- "$D"' EXIT HUP INT TERM
+python3 "$PWD/tests/make_deb_final_set_fixtures.py" --check
 mkdir -p "$D/run_file_replay_tests"
 echo 'Running run_file_replay_tests'
 timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_file_replay_tests"
@@ -92,3 +93,14 @@ mkdir -p "$D/run_selected_catalog_tests"
 mkdir -p "$D/"run_selected_catalog_tests/store
 echo 'Running run_selected_catalog_tests'
 timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_selected_catalog_tests" "$D/"run_selected_catalog_tests/store "$PWD/"tests/fixtures/selected-catalog
+mkdir -p "$D/run_deb_final_set_tests"
+mkdir -p "$D/"run_deb_final_set_tests/store
+echo 'Running run_deb_final_set_tests'
+if timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_deb_final_set_tests" "$D/"run_deb_final_set_tests/store "$PWD/"tests/fixtures/deb-final-set > "$D/final-set-native.log" 2>&1; then
+  cat "$D/final-set-native.log"
+else
+  cat "$D/final-set-native.log"
+  exit 1
+fi
+python3 "$PWD/tests/compare_deb_final_set.py" --media "$PWD/tests/fixtures/deb-final-set" --native "$D/final-set-native.log" --output "$D/final-set-native-oracle.json"
+timeout --kill-after=5s 600s python3 "$PWD/tests/check_deb_final_set_upstream.py" --media "$PWD/tests/fixtures/deb-final-set" --work "$D/upstream-endpoint"
