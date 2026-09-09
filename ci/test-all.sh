@@ -61,3 +61,7 @@ mkdir -p "$D/"run_generation_publication_tests/store
 mkdir -p "$D/"run_generation_publication_tests/bank
 echo 'Running run_generation_publication_tests'
 timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_generation_publication_tests" "$D/"run_generation_publication_tests/root "$D/"run_generation_publication_tests/state "$D/"run_generation_publication_tests/store "$D/"run_generation_publication_tests/bank
+mkdir -p "$D/run_deb_container_tests"
+mkdir -p "$D/"run_deb_container_tests/store
+echo 'Running run_deb_container_tests'
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_deb_container_tests" "$D/"run_deb_container_tests/store
