@@ -65,6 +65,13 @@ def fixtures():
     yield 'valid-xz', deb(lzma.compress(raw), '.xz')
     yield 'valid-zstd', deb(zstd(raw), '.zst')
     yield 'valid-gnu', deb(tar(entries, fmt=tarfile.GNU_FORMAT))
+    for label, fields in [
+        ('valid-relations', b'Depends: libc6:any (>= 2.41) | alternate:arm64\nProvides: virtual-name:arm64 (= 1)\nBuilt-Using: source-name (= 2)\n'),
+        ('valid-control-invalid-relations', b'Provides: virtual-name (>= 1)\n'),
+    ]:
+        metadata_entries = [(name, CONTROL + fields if name == './control' else data, kind, target)
+                            for name, data, kind, target in entries]
+        yield label, deb(lzma.compress(tar(metadata_entries)), '.xz')
     yield 'count-boundary', deb(tar(entries + [(f'extra-{i}', b'', regular, '') for i in range(60)]))
     yield 'pax-attributes', deb(tar(entries, fmt=tarfile.PAX_FORMAT, pax={'SCHILY.xattr.user.fixture': 'retained-in-original'}))
     yield 'missing-control', deb(tar(entries[:1] + entries[2:]))

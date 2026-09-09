@@ -2,6 +2,7 @@
 with Ada.Unchecked_Deallocation; with Interfaces.C;
 with MC_Clock; with MC_Posix;
 with Pkg_Deb_Container; with Pkg_Deb_Control;
+with Pkg_Deb_Relations;
 package body Pkg_Deb_Metadata with SPARK_Mode => Off is
    use type Interfaces.C.unsigned;
    procedure Inspect (Store : in out MC_Store.Store; Original : Digest; Deadline : Counter;
@@ -39,6 +40,7 @@ package body Pkg_Deb_Metadata with SPARK_Mode => Off is
       Check_Time; if Status /= OK then Done; return; end if;
       Pkg_Deb_Fields.Parse (Raw (1 .. Used), Candidate.Fields, Status);
       if Status = OK then Pkg_Deb_Fields.Check_Identity (Raw (1 .. Used), Candidate.Fields, Candidate.Identity, Status); end if;
+      if Status = OK then Pkg_Deb_Relations.Validate_All (Raw (1 .. Used), Candidate.Fields, Status); end if;
       Free (Raw); if Status /= OK then Done; return; end if;
       Check_Time; if Status = OK then Result := Candidate.all; end if;
       Done;

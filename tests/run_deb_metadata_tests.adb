@@ -176,6 +176,15 @@ begin
       Expect (MC_Text.Image (Result.Identity.Name) = "fixture", "native original path identity");
       DM.Inspect (Store, Object, 0, Result, Status);
       Expect (Status = Stale and then Result.Control = Zero_Digest and then DF.Field_Count (Result.Fields) = 0, "expired complete metadata path");
+      Actual ("valid-relations.deb");
+      Expect (DF.Has_Field (Result.Fields, "provides"), "full path retains architecture-qualified provides");
+      declare F : MC_FS.File; begin
+         MC_FS.Open_Read (Media, "valid-control-invalid-relations.deb", F, Status); Need ("invalid relation original");
+         MC_Store.Import_File (Store, F, MC_Store.Max_Object_Size, Object, Status); Need ("invalid relation import"); MC_FS.Close (F);
+         DM.Inspect (Store, Object, Deadline, Result, Status);
+         Expect (Status = Invalid_Input and then Result.Control = Zero_Digest and then DF.Field_Count (Result.Fields) = 0,
+            "original path refuses relation syntax without partial identity");
+      end;
    end if;
    MC_FS.Close (Media); MC_Store.Close (Store); Report;
 exception when others => MC_FS.Close (Media); MC_Store.Close (Store); raise;

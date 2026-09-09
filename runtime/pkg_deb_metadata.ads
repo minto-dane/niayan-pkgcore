@@ -10,7 +10,7 @@ package Pkg_Deb_Metadata with SPARK_Mode => Off is
    procedure Inspect (Store : in out MC_Store.Store; Original : Digest; Deadline : Counter;
                       Result : out Observation; Status : out Outcome);
    -- Rechecks original DEB -> compressed control -> raw control -> field syntax
-   -- and identity metadata through the native readers. UID 0 is refused.
-   -- This is no execution grant: relationships, source authenticity, all effects,
+   -- and identity and binary relationship syntax through native readers. UID 0 is refused.
+   -- This is no execution grant: relationship satisfaction, source authenticity, all effects,
    -- deployment architecture support and the actual plan need independent guards.
 end Pkg_Deb_Metadata;

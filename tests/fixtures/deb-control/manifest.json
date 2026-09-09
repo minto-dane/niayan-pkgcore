@@ -30,6 +30,18 @@
     "accepted": true
   },
   {
+    "filename": "valid-relations.deb",
+    "sha256": "f886d09fcea8cdedeef176ae057442e0b3e90710ff21ab4e024f6b581af3d8cf",
+    "size": 1704,
+    "accepted": true
+  },
+  {
+    "filename": "valid-control-invalid-relations.deb",
+    "sha256": "52251a3d8a573d2f8bfffcba6fc39d4420ba04e141e5705ea42ec063dd4055bb",
+    "size": 1648,
+    "accepted": true
+  },
+  {
     "filename": "count-boundary.deb",
     "sha256": "931d0eec8f8a7c72d90bcca6df9bb7d854a2524e674b8df1b64e542e00a15daf",
     "size": 42176,

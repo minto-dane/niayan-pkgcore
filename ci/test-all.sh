@@ -9,23 +9,23 @@ D=$(mktemp -d "${TMPDIR:-/tmp}/nia-tests.XXXXXXXX")
 trap 'rm -rf -- "$D"' EXIT HUP INT TERM
 mkdir -p "$D/run_file_replay_tests"
 echo 'Running run_file_replay_tests'
-timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_file_replay_tests" 
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_file_replay_tests"
 mkdir -p "$D/run_composition_tests"
 echo 'Running run_composition_tests'
-timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_composition_tests" 
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_composition_tests"
 mkdir -p "$D/run_pkg_tests"
 echo 'Running run_pkg_tests'
-timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_pkg_tests" 
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_pkg_tests"
 mkdir -p "$D/run_rpm_tests"
 echo 'Running run_rpm_tests'
-timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_rpm_tests" 
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_rpm_tests"
 mkdir -p "$D/run_journal_io_tests"
 mkdir -p "$D/"run_journal_io_tests/private
 echo 'Running run_journal_io_tests'
 timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_journal_io_tests" "$D/"run_journal_io_tests/private
 mkdir -p "$D/run_v2_pkg_tests"
 echo 'Running run_v2_pkg_tests'
-timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_v2_pkg_tests" 
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_v2_pkg_tests"
 mkdir -p "$D/run_file_engine_tests"
 mkdir -p "$D/"run_file_engine_tests/root
 mkdir -p "$D/"run_file_engine_tests/state
@@ -35,19 +35,19 @@ echo 'Running run_file_engine_tests'
 timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_file_engine_tests" "$D/"run_file_engine_tests/root "$D/"run_file_engine_tests/state "$D/"run_file_engine_tests/store
 mkdir -p "$D/run_repair_tests"
 echo 'Running run_repair_tests'
-timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_repair_tests" 
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_repair_tests"
 mkdir -p "$D/run_retention_batch_tests"
 echo 'Running run_retention_batch_tests'
-timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_retention_batch_tests" 
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_retention_batch_tests"
 mkdir -p "$D/run_enterprise_pkg_tests"
 echo 'Running run_enterprise_pkg_tests'
-timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_enterprise_pkg_tests" 
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_enterprise_pkg_tests"
 mkdir -p "$D/run_pkg_resolution_tests"
 echo 'Running run_pkg_resolution_tests'
-timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_pkg_resolution_tests" 
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_pkg_resolution_tests"
 mkdir -p "$D/run_deb_semantics_tests"
 echo 'Running run_deb_semantics_tests'
-timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_deb_semantics_tests" 
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_deb_semantics_tests"
 mkdir -p "$D/run_generation_stage_tests"
 mkdir -p "$D/"run_generation_stage_tests/root
 mkdir -p "$D/"run_generation_stage_tests/state
@@ -73,3 +73,6 @@ mkdir -p "$D/run_deb_metadata_tests"
 mkdir -p "$D/"run_deb_metadata_tests/store
 echo 'Running run_deb_metadata_tests'
 timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_deb_metadata_tests" "$D/"run_deb_metadata_tests/store "$PWD/"tests/fixtures/deb-control
+mkdir -p "$D/run_deb_relations_tests"
+echo 'Running run_deb_relations_tests'
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_deb_relations_tests"
