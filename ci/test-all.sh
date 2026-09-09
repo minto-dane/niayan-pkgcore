@@ -54,3 +54,10 @@ mkdir -p "$D/"run_generation_stage_tests/state
 mkdir -p "$D/"run_generation_stage_tests/store
 echo 'Running run_generation_stage_tests'
 timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_generation_stage_tests" "$D/"run_generation_stage_tests/root "$D/"run_generation_stage_tests/state "$D/"run_generation_stage_tests/store
+mkdir -p "$D/run_generation_publication_tests"
+mkdir -p "$D/"run_generation_publication_tests/root
+mkdir -p "$D/"run_generation_publication_tests/state
+mkdir -p "$D/"run_generation_publication_tests/store
+mkdir -p "$D/"run_generation_publication_tests/bank
+echo 'Running run_generation_publication_tests'
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_generation_publication_tests" "$D/"run_generation_publication_tests/root "$D/"run_generation_publication_tests/state "$D/"run_generation_publication_tests/store "$D/"run_generation_publication_tests/bank

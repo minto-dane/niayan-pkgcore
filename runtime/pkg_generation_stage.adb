@@ -194,20 +194,33 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       if Status = OK and then After /= Before then Status := Conflict; end if;
    exception when others => MC_FS.Close (F); Status := Indeterminate;
    end Count_Children;
-   procedure Inspect
+   procedure Close (C : in out Verified_Generation) is
+   begin
+      MC_FS.Close (C.Root_Lock); MC_FS.Close (C.Lock);
+      MC_FS.Close (C.State); MC_FS.Close (C.Root);
+      C.Verified := False; C.Bound_Manifest := Zero_Digest;
+   end Close;
+   function Held (C : Verified_Generation) return Boolean is (C.Verified);
+   function Manifest (C : Verified_Generation) return Digest is (C.Bound_Manifest);
+   procedure Verify_And_Hold
      (Root_Path, State_Path, Store_Path : String; Expected_Manifest : Digest;
-      Status : out Outcome) is
-      M : GM.Manifest; Root, State : MC_FS.Root; Lock, Root_Lock : MC_FS.File; Store : MC_Store.Store;
+      C : in out Verified_Generation; Status : out Outcome) is
+      M : GM.Manifest; Store : MC_Store.Store;
+      Root : MC_FS.Root renames C.Root;
+      State : MC_FS.Root renames C.State;
+      Lock : MC_FS.File renames C.Lock;
+      Root_Lock : MC_FS.File renames C.Root_Lock;
       P : Plan_Access := null; Names : MC_Dirents.Listing; RS : Pkg_Root_State.State;
       State_Bytes : Pkg_Root_State.Frame; Marker : Bytes (1 .. 16); Used, Children, Total : Natural := 0;
       Shape : Pkg_File_Plan.Shape; Read_Bytes : Counter; Journal : MC_Log.Journal;
       E : MC_Log_Format.Log_Entry; V : Pkg_File_Replay.View; Binding : Pkg_File_Replay.Binding;
       procedure Done is
       begin
-         MC_Log.Close (Journal); MC_Store.Close (Store); MC_FS.Close (Root_Lock);
-         MC_FS.Close (Lock); MC_FS.Close (State); MC_FS.Close (Root); Free (P);
+         MC_Log.Close (Journal); MC_Store.Close (Store); Free (P);
+         if not C.Verified then Close (C); end if;
       end Done;
    begin
+      Status := Conflict; if C.Verified then return; end if;
       Status := Denied; if MC_Posix.Euid = 0 then return; end if;
       MC_FS.Open_Root (State_Path, State, Status, Private_Only => True);
       if Status = OK then MC_FS.Open_Locked (State, "generation.lock", Lock, Status, Create_If_Missing => False); end if;
@@ -267,7 +280,17 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       end loop;
       if Status = OK and then Total /= M.Entries then Status := Conflict; end if;
       if Status = OK then Gate (M, Expected_Manifest, "inspected", Status); end if;
+      if Status = OK then C.Verified := True; C.Bound_Manifest := Expected_Manifest; end if;
       Done;
-   exception when others => Done; Status := Indeterminate;
+   exception when others => Close (C); Done; Status := Indeterminate;
+   end Verify_And_Hold;
+   procedure Inspect
+     (Root_Path, State_Path, Store_Path : String; Expected_Manifest : Digest;
+      Status : out Outcome) is
+      C : Verified_Generation;
+   begin
+      Verify_And_Hold (Root_Path, State_Path, Store_Path, Expected_Manifest, C, Status);
+      Close (C);
+   exception when others => Close (C); Status := Indeterminate;
    end Inspect;
 end Pkg_Generation_Stage;

@@ -17,4 +17,6 @@ The build needs GNAT/GPRbuild, make, Python 3, libsodium, libarchive, libcurl, l
 
 Read [component integration](docs/system-composition.ja.md) and [packaging](packaging/README.ja.md). For the complete eight-repository source set, current verification evidence and fixed development environment, use the Nia OS integration workspace. Each repository builds independently; workspace tools verify the combined source profiles and generated snapshots.
 
+The internal generation SDK assembles bounded inactive stages and binds a verified stage and catalog in one accepted descriptor. Publication retains both stage reservations and requires the full managed guard. `generation.next` is unpublished workspace; readers use the accepted plan in root.state. These APIs refuse UID 0 and do not activate a mount, boot image or installed package manager. Tests use disposable synthetic generations and test-only authorities.
+
 Missing pins or guards fail closed. The build does not install services, enroll keys or enable live workers. Documented site integration, independent review and qualification gaps must be closed before production use. Imported edition notes remain in the initial Git commit and their historical evidence directories.

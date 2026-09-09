@@ -46,6 +46,7 @@ procedure Run_Generation_Stage_Tests with SPARK_Mode => Off is
       end if;
    end Authorize;
    package Stage is new Pkg_Generation_Stage (Authorize);
+   Hold : Stage.Verified_Generation;
    procedure Need (Label_Text : String) is
    begin Expect (S = OK, Label_Text & Outcome'Image (S)); end Need;
    function Number (N : Natural) return String is
@@ -147,6 +148,9 @@ begin
       Stage.Provision (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2), Ada.Command_Line.Argument (3),
          Encoded (1 .. Manifest_Used), Manifest_Digest, S); Expect (S = Denied, "root provision refused for valid fixture");
       Next; Expect (S = Denied, "root advance refused"); Inspect; Expect (S = Denied, "root inspection refused");
+      Stage.Verify_And_Hold (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2),
+         Ada.Command_Line.Argument (3), Manifest_Digest, Hold, S);
+      Expect (S = Denied and then not Stage.Held (Hold), "root held inspection refused");
       Report; return;
    end if;
    Deny_All := True;
@@ -177,6 +181,22 @@ begin
    Deny_Commit := False; Next; Need ("resume applied second batch"); Expect (Completed = 2, "second private batch committed");
    Next; Need ("idempotent completed stage"); Expect (Completed = 2, "no extra generation on repeat");
    Inspect; Need ("all 1054 entries verified including 1050 children of one directory");
+   Stage.Verify_And_Hold (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2),
+      Ada.Command_Line.Argument (3), Manifest_Digest, Hold, S); Need ("hold verified generation");
+   Expect (Stage.Held (Hold) and then Stage.Manifest (Hold) = Manifest_Digest, "held manifest binding");
+   Next; Expect (S /= OK, "held verification excludes stage writer");
+   Inspect; Expect (S /= OK, "held verification excludes second inspection");
+   MC_FS.Open_Root (Ada.Command_Line.Argument (2), State, S, Private_Only => True); Need ("held state fixture");
+   MC_FS.Open_Locked (State, "root.lock", F, S, Create_If_Missing => False);
+   Expect (S /= OK, "held verification excludes lower-level file writer"); MC_FS.Close (F); MC_FS.Close (State);
+   MC_Store.Open (Ada.Command_Line.Argument (3), Store, S); Need ("publication can reacquire CAS while stage is held");
+   MC_Store.Close (Store);
+   Stage.Verify_And_Hold (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2),
+      Ada.Command_Line.Argument (3), Manifest_Digest, Hold, S);
+   Expect (S = Conflict and then Stage.Held (Hold), "cannot overwrite a held reservation");
+   Stage.Close (Hold); Stage.Close (Hold);
+   Expect (not Stage.Held (Hold) and then Stage.Manifest (Hold) = Zero_Digest, "close releases and clears reservation");
+   Inspect; Need ("inspection succeeds after release");
    Deny_All := True; Inspect; Expect (S = Denied, "inspection requires live reservation"); Deny_All := False;
    MC_FS.Open_Root (Ada.Command_Line.Argument (1), Root, S, Private_Only => True); Need ("fixture root");
    MC_Atomic.Write (Root, "tree/usr/bin/untracked", Bytes'(1 => 9), True, S); Need ("extra fixture entry");
@@ -224,5 +244,5 @@ begin
    MC_Store.Put (Store, Bytes'(1 => 5), Ignored, S); Need ("unreferenced CAS object allowed"); MC_Store.Close (Store);
    Inspect; Need ("restored fixture fully reverified");
    MC_FS.Close (Root); MC_FS.Close (State); Report;
-exception when others => MC_Store.Close (Store); MC_FS.Close (Root); MC_FS.Close (State); MC_FS.Close (F); raise;
+exception when others => Stage.Close (Hold); MC_Store.Close (Store); MC_FS.Close (Root); MC_FS.Close (State); MC_FS.Close (F); raise;
 end Run_Generation_Stage_Tests;
