@@ -1,0 +1,51 @@
+[
+  {
+    "filename": "consumer.deb",
+    "sha256": "0f6ef3b64df5746218e3e239c356077a2a94257efaf09d350c8ac8e80f88e557",
+    "size": 20672,
+    "control": "8b26504fe2a243824b8918153a8beeef7baba147fd2f676990bbbbe4c6172a25",
+    "archive": "c5aa4b4f698a26b74da5e35d42cba479859bbf631040a790a018960f3f93944b"
+  },
+  {
+    "filename": "library-amd64.deb",
+    "sha256": "58d44b4ec99a566bea3a42071712b0fb3861d32509cd45603c46ca5ba119d961",
+    "size": 20672,
+    "control": "cdea0fb2dd479379b2ad793d68104bb27f1945583be0f64680766b3cdca69936",
+    "archive": "fa80064f2359d7350982c364c020e80c8b170652d5aae49e5f7ca4274ebf2a67"
+  },
+  {
+    "filename": "library-arm64.deb",
+    "sha256": "00e863e5628799d5a1fe9f24c82311574278d135937e19b635480d563f31b3c5",
+    "size": 20672,
+    "control": "1a48e9db7d76f50e4e9bd96a8e769a881d54438c3625f99a664a92aff26f44aa",
+    "archive": "d6c15ca5460e5d5af3f285ae514607985b74ff69c5a77eea528e2b4e48952672"
+  },
+  {
+    "filename": "empty.deb",
+    "sha256": "0ca179e6befeb761f3613f1ef57ca892ebc3a6a228dca32f1309f0ac06a7de7e",
+    "size": 20672,
+    "control": "a31a856f430af395bccd7eb2f142b11ad3ae0fc5daf3acc4ffb341c48a5abd39",
+    "archive": "4a36f6eb7c1b236ab6cb28ddb882919e888bf393dfc00d93008ad6730697f8f7"
+  },
+  {
+    "filename": "consumer-repacked.deb",
+    "sha256": "9305004013dfd1abaf229e49ab2337a81a62e1dff70e4e0910569bffb90e77a1",
+    "size": 20672,
+    "control": "8b26504fe2a243824b8918153a8beeef7baba147fd2f676990bbbbe4c6172a25",
+    "archive": "c5aa4b4f698a26b74da5e35d42cba479859bbf631040a790a018960f3f93944b"
+  },
+  {
+    "filename": "consumer-upgrade.deb",
+    "sha256": "0e0f3577d1df0bf203fb665e643b6c04d4db1c4ffddfbdcc652b5e1fd03b8629",
+    "size": 20672,
+    "control": "2a1d46295ebe0f1f8c3b2349fc03cca0b7e39da35776797ef52d2847ae7c6062",
+    "archive": "faf57debc844081e32dc6dc651405e5ee2bc49a549d31f744c91fd641b711cc7"
+  },
+  {
+    "filename": "invalid.deb",
+    "sha256": "2bad3e457fb1e6b55d1c94179a11793e714a8935aad6ecc15df1ed4352d56c18",
+    "size": 20672,
+    "control": "667f3417e91f5ba5ad1529debcef1bc6b06e6bbbe02deb504646db00894b7167",
+    "archive": "8318116d9846757f73b8b98eebff806e5729c5b553b11142fa8947c735a37622"
+  }
+]
