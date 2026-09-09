@@ -42,6 +42,13 @@
     "archive": "faf57debc844081e32dc6dc651405e5ee2bc49a549d31f744c91fd641b711cc7"
   },
   {
+    "filename": "retention-rich.deb",
+    "sha256": "d0b4978dbac5ba2da1b81b1b7634431752f0f8544e0d0b97d21ac17a83bc839f",
+    "size": 928,
+    "control": "81a6e6d8a4cf5c63e2ad57190e66f1b8fbf79ebb3af4ff4fb1fcfa953a516ea7",
+    "archive": "05b6d8bb279781c4c8f7ebf25b98156aa6007b8d540c4e92c769fb5fc1bda4ce"
+  },
+  {
     "filename": "invalid.deb",
     "sha256": "2bad3e457fb1e6b55d1c94179a11793e714a8935aad6ecc15df1ed4352d56c18",
     "size": 20672,

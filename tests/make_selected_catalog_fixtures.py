@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: MIT
 """Deterministic candidate-set inputs; never installed."""
 import argparse
+import gzip
 import hashlib
 import json
 from pathlib import Path
 import tarfile
 from make_deb_control_fixtures import member, tar
+from make_deb_payload_fixtures import entry, archive as payload_archive
 
 DEST = Path(__file__).resolve().parent / 'fixtures/selected-catalog'
 
@@ -31,6 +33,19 @@ def fixtures():
         data_tar = tar([] if payload is None else [('./' + filename, payload, tarfile.REGTYPE, '')])
         raw = b'!<arch>\n' + member('debian-binary', b'2.0\n') + member('control.tar', control_tar) + member('data.tar', data_tar)
         yield filename + '.deb', raw, control, control_tar
+    control = b'Package: retention-rich\nVersion: 1\nArchitecture: all\nMaintainer: Fixture <fixture@example.invalid>\nDescription: retention fixture\n'
+    control_tar = gzip.compress(tar([('./', b'', tarfile.DIRTYPE, ''),
+        ('./control', control, tarfile.REGTYPE, ''), ('./postinst', b'#!/bin/sh\nexit 97\n', tarfile.REGTYPE, ''),
+        ('./conffiles', b'/dir/file\n', tarfile.REGTYPE, ''), ('./future-field', b'opaque\x00\xff', tarfile.REGTYPE, '')]), mtime=0)
+    data_tar = payload_archive([entry('./dir', kind=tarfile.DIRTYPE, mode=0o2755),
+        entry('./dir/file', b'contents', mode=0o640, pax_headers={'SCHILY.xattr.user.demo': 'value',
+            'SCHILY.acl.access': 'user::rw-,user:42:r--,group::r--,mask::r--,other::---'}),
+        entry('./hard', kind=tarfile.LNKTYPE, link='./dir/file'),
+        entry('./sym', kind=tarfile.SYMTYPE, link='dir/file'), entry('./zero'),
+        entry('./device', kind=tarfile.CHRTYPE, devmajor=1, devminor=3),
+        entry('./block', kind=tarfile.BLKTYPE, devmajor=8, devminor=1), entry('./fifo', kind=tarfile.FIFOTYPE)], tarfile.PAX_FORMAT)
+    raw = b'!<arch>\n' + member('debian-binary', b'2.0\n') + member('control.tar.gz', control_tar) + member('data.tar.gz', gzip.compress(data_tar, mtime=0))
+    yield 'retention-rich.deb', raw, control, control_tar
     control = b'Package: invalid\nVersion: 1\nArchitecture: all\n'
     control_tar = tar([('./control', control, tarfile.REGTYPE, '')])
     yield 'invalid.deb', b'!<arch>\n' + member('debian-binary', b'2.0\n') + member('control.tar', control_tar) + member('data.tar', tar([])), control, control_tar

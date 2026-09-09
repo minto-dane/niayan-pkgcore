@@ -9,6 +9,7 @@ D=$(mktemp -d "${TMPDIR:-/tmp}/nia-tests.XXXXXXXX")
 trap 'rm -rf -- "$D"' EXIT HUP INT TERM
 python3 "$PWD/tests/make_deb_final_set_fixtures.py" --check
 python3 "$PWD/tests/make_deb_transition_fixtures.py" --check
+python3 "$PWD/tests/make_selected_catalog_fixtures.py" --check
 mkdir -p "$D/run_file_replay_tests"
 echo 'Running run_file_replay_tests'
 timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_file_replay_tests"
@@ -130,4 +131,5 @@ else
   exit 1
 fi
 python3 "$PWD/tests/compare_catalog_store.py" --media "$PWD/tests/fixtures/selected-catalog" --native "$D/catalog-store-native.log" --cas "$D/run_catalog_store_tests/store" --output "$D/catalog-store-oracle.json"
+python3 "$PWD/tests/compare_catalog_retention.py" --media "$PWD/tests/fixtures/selected-catalog" --native "$D/catalog-store-native.log" --cas "$D/run_catalog_store_tests/store" --output "$D/catalog-retention-oracle.json"
 timeout --kill-after=5s 600s python3 "$PWD/tests/check_deb_final_set_upstream.py" --media "$PWD/tests/fixtures/deb-final-set" --work "$D/upstream-endpoint"

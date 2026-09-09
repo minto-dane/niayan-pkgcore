@@ -279,7 +279,7 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       procedure Free is new Ada.Unchecked_Deallocation (Pkg_Deb_Metadata.Observation, Metadata_Access);
       Name : constant String := (if N = 1 then "empty.deb" else "consumer-upgrade.deb");
    begin
-      MC_FS.Open_Root (Fixture_Path, Media, S); Need ("native fixture media");
+      MC_FS.Open_Root (Ada.Directories.Full_Name (Fixture_Path), Media, S); Need ("native fixture media");
       MC_FS.Open_Read (Media, Name, File, S); Need ("native fixture original");
       MC_Store.Import_File (Store, File, MC_Store.Max_Object_Size, Catalog_Original, S); Need ("native original CAS"); MC_FS.Close (File);
       Pkg_Deb_Metadata.Inspect (Store, Catalog_Original, Observation_Deadline, Metadata.all, S); Need ("native expected control");
