@@ -114,4 +114,14 @@ else
   exit 1
 fi
 python3 "$PWD/tests/compare_deb_transition.py" --media "$PWD/tests/fixtures/deb-transition" --native "$D/transition-native.log" --output "$D/transition-native-oracle.json"
+mkdir -p "$D/run_catalog_store_tests"
+mkdir -p "$D/"run_catalog_store_tests/store
+echo 'Running run_catalog_store_tests'
+if timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_catalog_store_tests" "$D/"run_catalog_store_tests/store "$PWD/"tests/fixtures/selected-catalog > "$D/catalog-store-native.log" 2>&1; then
+  cat "$D/catalog-store-native.log"
+else
+  cat "$D/catalog-store-native.log"
+  exit 1
+fi
+python3 "$PWD/tests/compare_catalog_store.py" --media "$PWD/tests/fixtures/selected-catalog" --native "$D/catalog-store-native.log" --cas "$D/run_catalog_store_tests/store" --output "$D/catalog-store-oracle.json"
 timeout --kill-after=5s 600s python3 "$PWD/tests/check_deb_final_set_upstream.py" --media "$PWD/tests/fixtures/deb-final-set" --work "$D/upstream-endpoint"
