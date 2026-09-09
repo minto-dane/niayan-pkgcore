@@ -2,7 +2,7 @@
 
 Catalog and file change planning, bounded package semantics, execution and recovery support for Nia OS. The active product consumes DEB inputs; inherited RPM metadata support does not define the active distribution.
 
-Independent Ada/SPARK repository, MIT licensed. Native compilation, application linking and registered Ada tests now run in Debian 13 amd64. Strict SPARK flow has passed. Full formal proof and production integration remain incomplete; native success does not grant production qualification.
+Independent Ada/SPARK repository with a small C codec boundary, MIT licensed. Native compilation, application linking and registered Ada tests now run in Debian 13 amd64. Strict SPARK flow has passed. Full formal proof and production integration remain incomplete; native success does not grant production qualification.
 
 ```sh
 make compile-all build test
@@ -11,7 +11,7 @@ python3 ci/install-gnatprove.py
 make flow prove
 ```
 
-The build needs GNAT/GPRbuild, make, Python 3, libsodium, libarchive, libcurl, libxml2 and libsystemd development packages. Python reference tooling also uses python3-cryptography; dedicated bus tests use dbus. The pinned GitHub CI container installs these dependencies with `ci/setup-container.sh`; that script replaces apt sources and is intended only for its disposable CI container.
+The build needs GNAT/GPRbuild, make, Python 3, libsodium, libarchive, zlib, liblzma, libzstd, libcurl, libxml2 and libsystemd development packages. Python reference tooling also uses python3-cryptography; dedicated bus tests use dbus. The pinned GitHub CI container installs these dependencies with `ci/setup-container.sh`; that script replaces apt sources and is intended only for its disposable CI container.
 
 `make test` runs every Ada main registered for this component in the central test plan, including isolated I/O and read-only host observation. Tests run unprivileged with fresh private directories. `make compile-all` also checks SDK units not linked by an application main. `make flow prove` treats warnings and unproved obligations as failures.
 
