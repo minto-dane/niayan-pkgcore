@@ -62,7 +62,13 @@ mkdir -p "$D/"run_generation_publication_tests/state
 mkdir -p "$D/"run_generation_publication_tests/store
 mkdir -p "$D/"run_generation_publication_tests/bank
 echo 'Running run_generation_publication_tests'
-timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_generation_publication_tests" "$D/"run_generation_publication_tests/root "$D/"run_generation_publication_tests/state "$D/"run_generation_publication_tests/store "$D/"run_generation_publication_tests/bank
+if timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_generation_publication_tests" "$D/"run_generation_publication_tests/root "$D/"run_generation_publication_tests/state "$D/"run_generation_publication_tests/store "$D/"run_generation_publication_tests/bank "$PWD/"tests/fixtures/selected-catalog > "$D/current-catalog-native.log" 2>&1; then
+  cat "$D/current-catalog-native.log"
+else
+  cat "$D/current-catalog-native.log"
+  exit 1
+fi
+python3 "$PWD/tests/compare_current_catalog.py" --root "$D/run_generation_publication_tests/root" --state "$D/run_generation_publication_tests/state" --cas "$D/run_generation_publication_tests/store" --bank "$D/run_generation_publication_tests/bank" --media "$PWD/tests/fixtures/selected-catalog" --native "$D/current-catalog-native.log" --output "$D/current-catalog-oracle.json"
 mkdir -p "$D/run_deb_container_tests"
 mkdir -p "$D/"run_deb_container_tests/store
 echo 'Running run_deb_container_tests'

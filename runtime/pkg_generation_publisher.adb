@@ -1,13 +1,14 @@
 -- SPDX-License-Identifier: MIT
 with Ada.Unchecked_Deallocation; with Interfaces.C;
-with MC_Atomic; with MC_Dirents; with MC_FS; with MC_Posix; with MC_SHA256; with MC_Store;
-with Pkg_File_Engine; with Pkg_File_Plan; with Pkg_File_Replay;
+with MC_Atomic; with MC_Clock; with MC_Dirents; with MC_FS; with MC_Posix; with MC_SHA256; with MC_Store;
+with Pkg_Catalog_Store; with Pkg_File_Engine; with Pkg_File_Plan; with Pkg_File_Replay;
 with Pkg_Generation_Manifest; with Pkg_Generation_Stage; with Pkg_Recovery_Audit; with Pkg_Root_State;
 package body Pkg_Generation_Publisher with SPARK_Mode => Off is
    package GD renames Pkg_Generation_Descriptor;
    package GM renames Pkg_Generation_Manifest;
    package Staging is new Pkg_Generation_Stage (Authorize_Stage);
    use type Interfaces.C.unsigned; use type Interfaces.C.int; use type Wide; use type Word;
+   use type Pkg_Root_State.State;
    use type GD.Descriptor; use type Pkg_File_Replay.Direction;
    type Plan_Access is access Pkg_File_Plan.Plan;
    type Buffer_Access is access Bytes;
@@ -70,39 +71,78 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       Done;
    exception when others => Done; Status := Indeterminate;
    end Provision;
+   type Observation_Context is limited record
+      Root, State : MC_FS.Root;
+      Lock, Root_Lock : MC_FS.File;
+      Store : MC_Store.Store;
+      Accepted : Pkg_Root_State.State;
+      Bound : GD.Descriptor := GD.Empty;
+   end record;
+   procedure Close_Observation (C : in out Observation_Context) is
+   begin
+      MC_Store.Close (C.Store); MC_FS.Close (C.Root_Lock); MC_FS.Close (C.Lock);
+      MC_FS.Close (C.State); MC_FS.Close (C.Root); C.Bound := GD.Empty; C.Accepted := (others => <>);
+   end Close_Observation;
+   procedure Observe_And_Lock (Root_Path, State_Path, Store_Path : String; Root_ID : Identity;
+      C : in out Observation_Context; Status : out Outcome) is
+      Before, After : GD.Descriptor; M : GM.Manifest;
+      P : Plan_Access := null; Audit : Pkg_Recovery_Audit.Report;
+   begin
+      Close_Observation (C); Status := Denied; if MC_Posix.Euid = 0 then return; end if;
+      MC_FS.Open_Root (State_Path, C.State, Status, Private_Only => True);
+      if Status = OK then MC_FS.Open_Locked (C.State, "publication.lock", C.Lock, Status, Create_If_Missing => False); end if;
+      if Status = OK then MC_FS.Open_Locked (C.State, "root.lock", C.Root_Lock, Status, Create_If_Missing => False); end if;
+      if Status = OK then MC_FS.Open_Root (Root_Path, C.Root, Status, Private_Only => True); end if;
+      if Status = OK then Read_State (C.Root, C.State, Root_ID, C.Accepted, Status); end if;
+      if Status /= OK then return; end if;
+      if C.Accepted.Active_Transaction /= Zero_Identity then Status := Indeterminate; return; end if;
+      if C.Accepted.Generation = 0 then Status := Stale; return; end if;
+      MC_Store.Open (Store_Path, C.Store, Status); P := new Pkg_File_Plan.Plan;
+      if Status = OK then Read_Plan (C.Store, C.Accepted.Accepted_Plan, P.all, Status); end if;
+      if Status = OK then GD.Check (C.Store, P.all, Before, After, Status); end if;
+      if Status = OK and then (After.Root_ID /= Root_ID or else After.Generation /= C.Accepted.Generation
+        or else After.Catalog /= C.Accepted.Package_Set) then Status := Conflict; end if;
+      if Status = OK then Read_Manifest (C.Store, After, M, Status); end if;
+      if Status = OK and then M.Effect_Contract /= P.Effect_Contract then Status := Conflict; end if;
+      if Status = OK then Pkg_Recovery_Audit.Inspect (State_Path, Store_Path, C.Accepted.Accepted_Plan, Audit, Status); end if;
+      if Status = OK and then Audit.Log_State.Phase /= Pkg_File_Replay.Forward_Final then Status := Conflict; end if;
+      if Status = OK then C.Bound := After; end if;
+      Free (P);
+   exception when others => Free (P); C.Bound := GD.Empty; Status := Indeterminate;
+   end Observe_And_Lock;
    procedure Read_Current (Root_Path, State_Path, Store_Path : String; Root_ID : Identity;
       Current : out GD.Descriptor; Status : out Outcome) is
-      Root, State : MC_FS.Root; Lock, Root_Lock : MC_FS.File; Store : MC_Store.Store;
-      RS : Pkg_Root_State.State; Before, After : GD.Descriptor; M : GM.Manifest;
-      P : Plan_Access := null; Audit : Pkg_Recovery_Audit.Report;
-      procedure Done is
-      begin
-         MC_Store.Close (Store); MC_FS.Close (Root_Lock); MC_FS.Close (Lock);
-         MC_FS.Close (State); MC_FS.Close (Root); Free (P);
-      end Done;
+      C : Observation_Context;
    begin
-      Current := GD.Empty; Status := Denied; if MC_Posix.Euid = 0 then return; end if;
-      MC_FS.Open_Root (State_Path, State, Status, Private_Only => True);
-      if Status = OK then MC_FS.Open_Locked (State, "publication.lock", Lock, Status, Create_If_Missing => False); end if;
-      if Status = OK then MC_FS.Open_Locked (State, "root.lock", Root_Lock, Status, Create_If_Missing => False); end if;
-      if Status = OK then MC_FS.Open_Root (Root_Path, Root, Status, Private_Only => True); end if;
-      if Status = OK then Read_State (Root, State, Root_ID, RS, Status); end if;
-      if Status /= OK then Done; return; end if;
-      if RS.Active_Transaction /= Zero_Identity then Status := Indeterminate; Done; return; end if;
-      if RS.Generation = 0 then Status := Stale; Done; return; end if;
-      MC_Store.Open (Store_Path, Store, Status); P := new Pkg_File_Plan.Plan;
-      if Status = OK then Read_Plan (Store, RS.Accepted_Plan, P.all, Status); end if;
-      if Status = OK then GD.Check (Store, P.all, Before, After, Status); end if;
-      if Status = OK and then (After.Root_ID /= Root_ID or else After.Generation /= RS.Generation
-        or else After.Catalog /= RS.Package_Set) then Status := Conflict; end if;
-      if Status = OK then Read_Manifest (Store, After, M, Status); end if;
-      if Status = OK and then M.Effect_Contract /= P.Effect_Contract then Status := Conflict; end if;
-      if Status = OK then Pkg_Recovery_Audit.Inspect (State_Path, Store_Path, RS.Accepted_Plan, Audit, Status); end if;
-      if Status = OK and then Audit.Log_State.Phase /= Pkg_File_Replay.Forward_Final then Status := Conflict; end if;
-      if Status = OK then Current := After; end if;
-      Done;
-   exception when others => Done; Current := GD.Empty; Status := Indeterminate;
+      Current := GD.Empty; Observe_And_Lock (Root_Path, State_Path, Store_Path, Root_ID, C, Status);
+      if Status = OK then Current := C.Bound; end if;
+      Close_Observation (C);
+   exception when others => Close_Observation (C); Current := GD.Empty; Status := Indeterminate;
    end Read_Current;
+   procedure Read_Current_Catalog (Root_Path, State_Path, Store_Path : String; Root_ID : Identity;
+      Deadline : Counter; Current : out GD.Descriptor;
+      Value : in out Pkg_Selected_Catalog.Catalog; Payload : in out Pkg_Payload_Index.Index;
+      Status : out Outcome) is
+      C : Observation_Context; Latest : Pkg_Root_State.State; Now : Counter;
+      procedure Clear_Result is
+      begin Current := GD.Empty; Pkg_Selected_Catalog.Clear (Value); Pkg_Payload_Index.Clear (Payload); end Clear_Result;
+      procedure Check_Time is
+      begin
+         MC_Clock.Boottime_Milliseconds (Now, Status);
+         if Status = OK and then Now >= Deadline then Status := Stale; end if;
+      end Check_Time;
+   begin
+      Clear_Result; Status := Denied; if MC_Posix.Euid = 0 then return; end if;
+      Check_Time; if Status /= OK then return; end if;
+      Observe_And_Lock (Root_Path, State_Path, Store_Path, Root_ID, C, Status);
+      if Status = OK then Pkg_Catalog_Store.Load (C.Store, C.Bound.Catalog, Deadline, Value, Payload, Status); end if;
+      if Status = OK then Read_State (C.Root, C.State, Root_ID, Latest, Status); end if;
+      if Status = OK and then Latest /= C.Accepted then Status := Stale; end if;
+      if Status = OK then Check_Time; end if;
+      if Status = OK then Current := C.Bound; else Clear_Result; end if;
+      Close_Observation (C);
+   exception when others => Close_Observation (C); Clear_Result; Status := Indeterminate;
+   end Read_Current_Catalog;
    procedure Publish (Root_Path, State_Path, Store_Path, Generation_Bank : String;
       Expected_Plan, Health_Receipt : Digest; Status : out Outcome) is
       Root, State : MC_FS.Root; Lock, Root_Lock : MC_FS.File; Store : MC_Store.Store;

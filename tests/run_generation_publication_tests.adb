@@ -2,12 +2,16 @@
 -- Disposable synthetic generations and test-only authorities. These fixtures
 -- exercise the real composed guard; they do not attest real native DEB effects,
 -- a physical stop barrier, independent trust floors, or a running boot image.
-with Ada.Command_Line; with Ada.Directories; with Ada.Unchecked_Deallocation;
+-- The native catalog is real fixture data; tree/version remains a synthetic
+-- staging effect and is not an application of the DEB payload.
+with Ada.Command_Line; with Ada.Directories; with Ada.Text_IO; with Ada.Unchecked_Deallocation;
 with Interfaces.C; with System;
-with MC_Atomic; with MC_Codec; with MC_Config_Auth; with MC_Config_Receipt;
+with MC_Atomic; with MC_Clock; with MC_Codec; with MC_Config_Auth; with MC_Config_Receipt;
 with MC_Contract_Profile; with MC_FS; with MC_Hex; with MC_Log_Format; with MC_Posix;
 with MC_Runtime; with MC_SHA256; with MC_Stop_Barrier; with MC_Store; with MC_Text;
 with MC_Types; use MC_Types;
+with Pkg_Catalog_Store; with Pkg_Deb_Metadata; with Pkg_Deb_Payload;
+with Pkg_Payload_Index; with Pkg_Selected_Catalog;
 with Pkg_File_Plan; with Pkg_Generation_Descriptor; with Pkg_Generation_Manifest;
 with Pkg_Generation_Publisher; with Pkg_Generation_Stage; with Pkg_Managed_Engine; with Pkg_Root_State;
 with Resolver_Model; with Resolver_Admission; with Resolver_Wire;
@@ -15,6 +19,7 @@ with Test_Support; use Test_Support;
 procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    package GD renames Pkg_Generation_Descriptor; package GM renames Pkg_Generation_Manifest;
    package FP renames Pkg_File_Plan; package CR renames MC_Config_Receipt;
+   package NC renames Pkg_Selected_Catalog; package PX renames Pkg_Payload_Index;
    package SB renames MC_Stop_Barrier; package RM renames Resolver_Model;
    use type Interfaces.C.int; use type Interfaces.C.unsigned;
    use type Interfaces.C.unsigned_long_long; use type Byte; use type GD.Descriptor;
@@ -28,6 +33,11 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    S : Outcome; Store : MC_Store.Store; State, Root : MC_FS.Root;
    M : GM.Manifest; Manifest_Hash, Attrs, Catalog, Receipt, Plan_Hash, Ignored : Digest;
    Before, After, Current, Decoded, Other : GD.Descriptor;
+   Observed_Catalog : NC.Catalog; Observed_Payload : PX.Index;
+   Catalog_Original : Digest := Zero_Digest; Catalog_Size : Counter := 3;
+   Observation_Deadline : Counter := 0;
+   Fixture_Path : constant String := (if Ada.Command_Line.Argument_Count = 5 then Ada.Command_Line.Argument (5)
+      else Ada.Directories.Current_Directory & "/tests/fixtures/selected-catalog");
    First_Plan : Digest; First_Tx : Identity;
    type Plan_Access is access FP.Plan;
    P, Batch : constant Plan_Access := new FP.Plan;
@@ -190,6 +200,10 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       Probed := True;
       Publisher.Read_Current (Root_Path, State_Path, Store_Path, Root_ID, D, Local);
       Expect (Local /= OK and then D = GD.Empty, "publisher holds reader reservation during managed gate");
+      Publisher.Read_Current_Catalog (Root_Path, State_Path, Store_Path, Root_ID, Observation_Deadline,
+         D, Observed_Catalog, Observed_Payload, Local);
+      Expect (Local /= OK and then D = GD.Empty and then not NC.Sealed (Observed_Catalog)
+         and then not PX.Sealed (Observed_Payload), "native observer cannot pass the publisher reservation");
       Stage.Advance (Path & "/root", Path & "/state", Store_Path, Manifest_Hash, Count, Local);
       Expect (Local /= OK, "publisher retains verified stage writer reservation");
       MC_FS.Open_Root (Path & "/state", Stage_State, Local, Private_Only => True);
@@ -201,8 +215,32 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    end Probe_Reservations;
    procedure Publish is
    begin Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, Plan_Hash, Receipt, S); end Publish;
+   procedure Read_Native (Deadline : Counter) is
+   begin
+      Publisher.Read_Current_Catalog (Root_Path, State_Path, Store_Path, Root_ID, Deadline,
+         Current, Observed_Catalog, Observed_Payload, S);
+   end Read_Native;
+   procedure Native_Hidden is
+   begin
+      Expect (Current = GD.Empty and then not NC.Sealed (Observed_Catalog) and then NC.Fingerprint (Observed_Catalog) = Zero_Digest
+         and then not PX.Sealed (Observed_Payload) and then PX.Fingerprint (Observed_Payload) = Zero_Digest,
+         "failed observation clears all native outputs");
+   end Native_Hidden;
    procedure Read_Current is
-   begin Publisher.Read_Current (Root_Path, State_Path, Store_Path, Root_ID, Current, S); end Read_Current;
+      Metadata : GD.Descriptor; Metadata_Status : Outcome;
+   begin
+      Publisher.Read_Current (Root_Path, State_Path, Store_Path, Root_ID, Metadata, Metadata_Status);
+      Read_Native (Observation_Deadline);
+      Expect (S = Metadata_Status and then Current = Metadata, "native and descriptor observation share accepted state checks");
+      if S = OK then
+         Expect (NC.Fingerprint (Observed_Catalog) = Current.Catalog and then NC.Package_Count (Observed_Catalog) = 1
+            and then NC.Matches_Payload (Observed_Catalog, Observed_Payload), "native data belongs to this accepted descriptor");
+         Ada.Text_IO.Put_Line ("CURRENT_CATALOG " & MC_Hex.Encode (MC_SHA256.Hash (GD.Encode (Current)))
+            & Counter'Image (Current.Generation) & " " & MC_Hex.Encode (Current.Catalog)
+            & " " & MC_Hex.Encode (PX.Fingerprint (Observed_Payload))
+            & Natural'Image (NC.Package_Count (Observed_Catalog)) & Natural'Image (PX.Claim_Count (Observed_Payload)));
+      else Native_Hidden; end if;
+   end Read_Current;
    procedure Save_Plan is
    begin FP.Encode (P.all, B.all, Used, S); Need ("encode publication plan");
       MC_Store.Put (Store, B (1 .. Used), Plan_Hash, S); Need ("store publication plan"); end Save_Plan;
@@ -233,6 +271,29 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
          Plan_Hash := Original; P.all := Batch.all;
       end loop;
    end Check_Plan_Restrictions;
+   procedure Build_Native_Catalog (N : Positive) is
+      Value : NC.Catalog; Payload : PX.Index; Inventory : Pkg_Deb_Payload.Inventory;
+      Media : MC_FS.Root; File : MC_FS.File; Selected : NC.Selection (1 .. 1);
+      type Metadata_Access is access Pkg_Deb_Metadata.Observation;
+      Metadata : Metadata_Access := new Pkg_Deb_Metadata.Observation;
+      procedure Free is new Ada.Unchecked_Deallocation (Pkg_Deb_Metadata.Observation, Metadata_Access);
+      Name : constant String := (if N = 1 then "empty.deb" else "consumer-upgrade.deb");
+   begin
+      MC_FS.Open_Root (Fixture_Path, Media, S); Need ("native fixture media");
+      MC_FS.Open_Read (Media, Name, File, S); Need ("native fixture original");
+      MC_Store.Import_File (Store, File, MC_Store.Max_Object_Size, Catalog_Original, S); Need ("native original CAS"); MC_FS.Close (File);
+      Pkg_Deb_Metadata.Inspect (Store, Catalog_Original, Observation_Deadline, Metadata.all, S); Need ("native expected control");
+      Selected (1) := (Catalog_Original, Metadata.Control); Free (Metadata);
+      Pkg_Deb_Payload.Stage (Store, Catalog_Original, Observation_Deadline, Inventory, S); Need ("native source claims");
+      PX.Add (Payload, Inventory, Observation_Deadline, S); Need ("native index collection");
+      PX.Seal (Payload, Observation_Deadline, S); Need ("native index seal");
+      NC.Add (Value, Store, Catalog_Original, Observation_Deadline, S); Need ("native catalog collection");
+      NC.Seal (Value, Selected, Payload, Observation_Deadline, S); Need ("native catalog seal");
+      Pkg_Catalog_Store.Save (Store, Value, Observation_Deadline, Catalog, S); Need ("native catalog persistence");
+      Catalog_Size := Pkg_Catalog_Store.Header_Size + Pkg_Catalog_Store.Entry_Size;
+      MC_FS.Close (Media);
+   exception when others => Free (Metadata); MC_FS.Close (File); MC_FS.Close (Media); raise;
+   end Build_Native_Catalog;
    procedure Build (N : Positive) is
       Wire : Bytes (1 .. GM.Max_Bytes); N_Bytes : Natural;
       type UB_Access is access Bytes;
@@ -240,7 +301,9 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       procedure Free is new Ada.Unchecked_Deallocation (Bytes, UB_Access);
    begin
       MC_Store.Open (Store_Path, Store, S); Need ("open fixture CAS");
-      MC_Store.Put (Store, Bytes'(123, Byte (N), 125), Catalog, S); Need ("synthetic catalog bytes");
+      if MC_Posix.Euid = 0 then
+         MC_Store.Put (Store, Bytes'(123, Byte (N), 125), Catalog, S); Need ("root refusal fixture bytes");
+      else Build_Native_Catalog (N); end if;
       M := (Stage_ID => (others => Byte (40 + N)), Transaction_ID => (others => Byte (50 + N)),
          Epoch => 1, Fence => 2, Catalog => Catalog, Effect_Contract => Mark, Entries => 3, Count => 1, others => <>);
       FP.Clear (Batch.all); Batch.Root_ID := M.Stage_ID; Batch.Transaction_ID := GM.Transaction (M, 1);
@@ -248,7 +311,7 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       Batch.Package_Set := Catalog; Batch.Effect_Contract := Mark; Batch.Count := 3;
       MC_Text.Set (Batch.Changes (1).Path, "catalog", S); Need ("fixture catalog path");
       Batch.Changes (1).After := (Node_Kind => FP.Regular, Mode => 8#400#,
-         UID => Word (MC_Posix.Euid), GID => Word (MC_Posix.Egid), Size => 3,
+         UID => Word (MC_Posix.Euid), GID => Word (MC_Posix.Egid), Size => Catalog_Size,
          Content => Catalog, Xattrs => Attrs, others => <>);
       MC_Text.Set (Batch.Changes (2).Path, "tree", S); Need ("fixture tree path");
       Batch.Changes (2).After := (Node_Kind => FP.Directory, Mode => 8#755#,
@@ -304,8 +367,9 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       Read_Current; Need ("read recovered commit"); Expect (Current = After, "recovery preserves one root/catalog decision");
    end Commit_Window;
 begin
-   Expect (Ada.Command_Line.Argument_Count = 4, "four disposable private directories required");
+   Expect (Ada.Command_Line.Argument_Count in 4 | 5, "four disposable private directories and optional native fixture media");
    MC_Runtime.Initialize (S); Need ("runtime");
+   MC_Clock.Boottime_Milliseconds (Observation_Deadline, S); Need ("observation clock"); Observation_Deadline := Observation_Deadline + 600_000;
    declare Seed1 : constant Digest := (others => 1); Seed2 : constant Digest := (others => 2); begin
       Expect (Keypair (PK1'Address, SK1'Address, Seed1'Address) = 0, "test validator key");
       Expect (Keypair (PK2'Address, SK2'Address, Seed2'Address) = 0, "test reviewer key");
@@ -421,6 +485,43 @@ begin
       MC_Atomic.Write (State, Name, B (1 .. Used), False, S); Need ("restore exact final journal fixture");
    end;
    Read_Current; Need ("final restored journal readback"); Expect (Current = After, "exact final publication");
+   -- Catalog/original absence is distinct from a structurally valid accepted
+   -- descriptor. Neither stale memory nor generation.next can fill the gap.
+   declare CAS : MC_FS.Root; Lock : MC_FS.File; Metadata : GD.Descriptor;
+      function Object_Path (Hash : Digest) return String is
+         Hex : constant String := MC_Hex.Encode (Hash);
+      begin return "objects/" & Hex (1 .. 2) & "/" & Hex (3 .. 64); end Object_Path;
+   begin
+      Read_Current; Need ("seed complete observation");
+      Read_Native (0); Expect (S = Stale, "expired native observation"); Native_Hidden;
+      Read_Current; Need ("restore after expired observation");
+      Publisher.Read_Current_Catalog (Root_Path, State_Path, Store_Path, Boot, Observation_Deadline,
+         Current, Observed_Catalog, Observed_Payload, S);
+      Expect (S = Denied, "native observation checks exact root identity"); Native_Hidden;
+      MC_FS.Open_Root (Store_Path, CAS, S, Private_Only => True); Need ("native observer fault CAS");
+      for I in 1 .. 2 loop
+         declare Hash : constant Digest := (if I = 1 then Catalog_Original else Catalog); begin
+            Read_Current; Need ("seed observation before missing source");
+            MC_FS.Rename (CAS, Object_Path (Hash), "held-native-source", True, S); Need ("hold native source");
+            Publisher.Read_Current (Root_Path, State_Path, Store_Path, Root_ID, Metadata, S);
+            Need ("descriptor-only observation remains structural"); Expect (Metadata = After, "structural descriptor is not native evidence");
+            Read_Native (Observation_Deadline); Expect (S /= OK, "native observation requires every original and catalog"); Native_Hidden;
+            MC_FS.Rename (CAS, "held-native-source", Object_Path (Hash), True, S); Need ("restore exact source");
+         end;
+      end loop;
+      Read_Current; Need ("seed before root reservation contention");
+      MC_FS.Open_Locked (State, "root.lock", Lock, S, Create_If_Missing => False); Need ("hold root reservation");
+      Read_Native (Observation_Deadline); Expect (S /= OK, "native observation requires root reservation"); Native_Hidden; MC_FS.Close (Lock);
+      Read_Current; Need ("root reservation released after failure");
+      MC_Store.Open (Store_Path, Store, S); Need ("hold CAS reservation");
+      Read_Native (Observation_Deadline); Expect (S /= OK, "native observation requires CAS reservation"); Native_Hidden; MC_Store.Close (Store);
+      Read_Current; Need ("all reservations released after failure");
+      Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, First_Plan, Receipt, S);
+      Expect (S = Stale, "old observed generation cannot authorize an obsolete publication");
+      Read_Current; Need ("new accepted generation retained"); Expect (Current = After, "old plan cannot change current native catalog");
+      MC_FS.Close (CAS);
+   exception when others => MC_FS.Close (Lock); MC_FS.Close (CAS); raise;
+   end;
    MC_FS.Close (Root); MC_FS.Close (State); Report;
 exception when others => MC_Store.Close (Store); MC_FS.Close (Root); MC_FS.Close (State); raise;
 end Run_Generation_Publication_Tests;

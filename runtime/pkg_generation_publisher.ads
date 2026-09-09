@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT
 with MC_Types; use MC_Types;
 with Pkg_Managed_Engine; with Pkg_Generation_Descriptor;
+with Pkg_Selected_Catalog; with Pkg_Payload_Index;
 generic
    with package Managed is new Pkg_Managed_Engine (<>);
    with procedure Authorize_Stage
@@ -14,6 +15,17 @@ package Pkg_Generation_Publisher with SPARK_Mode => Off is
       Expected_Plan, Health_Receipt : Digest; Status : out Outcome);
    procedure Read_Current (Root_Path, State_Path, Store_Path : String; Root_ID : Identity;
       Current : out Pkg_Generation_Descriptor.Descriptor; Status : out Outcome);
+   procedure Read_Current_Catalog (Root_Path, State_Path, Store_Path : String; Root_ID : Identity;
+      Deadline : Counter; Current : out Pkg_Generation_Descriptor.Descriptor;
+      Value : in out Pkg_Selected_Catalog.Catalog; Payload : in out Pkg_Payload_Index.Index;
+      Status : out Outcome);
+   -- Reobserves the accepted native catalog and payload while holding the same
+   -- publication/root reservations used for descriptor and journal validation.
+   -- Every failure clears descriptor, catalog and payload together. CAS readers
+   -- may restore derived objects, but never alter accepted publication state.
+   -- Locks are released on return: this is a consistent planning observation,
+   -- NOT a lease or update grant. Publish still compares the exact predecessor
+   -- under its own reservation; metadata-only Read_Current is not native proof.
    -- Internal, unprivileged publication SDK. Every effect goes through the full
    -- managed guard; no default authority, external effects, or boot switch.
    -- Generation bank layout is fixed: <stage-id hex>/root and <stage-id hex>/state.

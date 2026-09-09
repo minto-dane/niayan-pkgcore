@@ -19,9 +19,9 @@ from compare_payload_index import fingerprint
 NAMES = ['consumer.deb', 'library-amd64.deb', 'library-arm64.deb', 'empty.deb']
 def sha(data): return hashlib.sha256(data).hexdigest()
 
-def check(media, native, cas):
+def reference(media, names):
     sources = []; packages = []
-    for name in NAMES:
+    for name in names:
         path = media/name; package, _, _ = original(path); packages.append(package)
         raw = subprocess.run(['ar', 'p', str(path), 'data.tar'], capture_output=True, check=True).stdout
         assert len(raw) <= 1024 * 1024
@@ -38,9 +38,13 @@ def check(media, native, cas):
                     ATIME=['FALSE', 0, 0], CTIME=['FALSE', 0, 0], BTIME=['FALSE', 0, 0]))
         sources.append(dict(ORIGINAL=package[0], TAR=sha(raw), entries=entries))
     index = fingerprint(sources)
-    retained = compare(media, NAMES, native, index['INDEX'])
     frame = struct.pack('>Q', 8) + b'NIACSEL1' + bytes.fromhex(index['INDEX']) + struct.pack('>Q', len(packages))
     frame += b''.join(bytes.fromhex(''.join(row[:3])) for row in sorted(packages))
+    return index, frame
+
+def check(media, native, cas):
+    index, frame = reference(media, NAMES)
+    retained = compare(media, NAMES, native, index['INDEX'])
     address = sha(frame)
     saved = [line.split() for line in native.read_text().splitlines() if line.startswith('STORED ')]
     assert saved == [['STORED', address, str(len(frame))]]
