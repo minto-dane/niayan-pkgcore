@@ -22,6 +22,8 @@ jobs:
           chown -R builder:builder "$GITHUB_WORKSPACE"
       - name: Compile, link and run every Ada test
         run: runuser -u builder -- make compile-all build test
+      - name: Verify inactive staging refuses root
+        run: sh ci/generation-root-refusal-test.sh
   proof:
     runs-on: ubuntu-24.04
     timeout-minutes: 120

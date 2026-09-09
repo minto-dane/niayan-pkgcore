@@ -48,3 +48,9 @@ timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UT
 mkdir -p "$D/run_deb_semantics_tests"
 echo 'Running run_deb_semantics_tests'
 timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_deb_semantics_tests" 
+mkdir -p "$D/run_generation_stage_tests"
+mkdir -p "$D/"run_generation_stage_tests/root
+mkdir -p "$D/"run_generation_stage_tests/state
+mkdir -p "$D/"run_generation_stage_tests/store
+echo 'Running run_generation_stage_tests'
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_generation_stage_tests" "$D/"run_generation_stage_tests/root "$D/"run_generation_stage_tests/state "$D/"run_generation_stage_tests/store
