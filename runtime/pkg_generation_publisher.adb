@@ -77,11 +77,12 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       Store : MC_Store.Store;
       Accepted : Pkg_Root_State.State;
       Bound : GD.Descriptor := GD.Empty;
+      Image : GM.Manifest;
    end record;
    procedure Close_Observation (C : in out Observation_Context) is
    begin
       MC_Store.Close (C.Store); MC_FS.Close (C.Root_Lock); MC_FS.Close (C.Lock);
-      MC_FS.Close (C.State); MC_FS.Close (C.Root); C.Bound := GD.Empty; C.Accepted := (others => <>);
+      MC_FS.Close (C.State); MC_FS.Close (C.Root); C.Bound := GD.Empty; C.Accepted := (others => <>); C.Image := (others => <>);
    end Close_Observation;
    procedure Observe_And_Lock (Root_Path, State_Path, Store_Path : String; Root_ID : Identity;
       C : in out Observation_Context; Status : out Outcome) is
@@ -106,7 +107,7 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       if Status = OK and then M.Effect_Contract /= P.Effect_Contract then Status := Conflict; end if;
       if Status = OK then Pkg_Recovery_Audit.Inspect (State_Path, Store_Path, C.Accepted.Accepted_Plan, Audit, Status); end if;
       if Status = OK and then Audit.Log_State.Phase /= Pkg_File_Replay.Forward_Final then Status := Conflict; end if;
-      if Status = OK then C.Bound := After; end if;
+      if Status = OK then C.Bound := After; C.Image := M; end if;
       Free (P);
    exception when others => Free (P); C.Bound := GD.Empty; Status := Indeterminate;
    end Observe_And_Lock;
@@ -128,6 +129,7 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       begin Current := GD.Empty; Pkg_Selected_Catalog.Clear (Value); Pkg_Payload_Index.Clear (Payload); end Clear_Result;
       procedure Check_Time is
       begin
+         Status := Invalid_Input; if Deadline = Counter'Last then return; end if;
          MC_Clock.Boottime_Milliseconds (Now, Status);
          if Status = OK and then Now >= Deadline then Status := Stale; end if;
       end Check_Time;
@@ -135,6 +137,7 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       Clear_Result; Status := Denied; if MC_Posix.Euid = 0 then return; end if;
       Check_Time; if Status /= OK then return; end if;
       Observe_And_Lock (Root_Path, State_Path, Store_Path, Root_ID, C, Status);
+      if Status = OK then GM.Check_Retention (C.Store, C.Image, Deadline, Status); end if;
       if Status = OK then Pkg_Catalog_Store.Load (C.Store, C.Bound.Catalog, Deadline, Value, Payload, Status); end if;
       if Status = OK then Read_State (C.Root, C.State, Root_ID, Latest, Status); end if;
       if Status = OK and then Latest /= C.Accepted then Status := Stale; end if;
@@ -144,11 +147,18 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
    exception when others => Close_Observation (C); Clear_Result; Status := Indeterminate;
    end Read_Current_Catalog;
    procedure Publish (Root_Path, State_Path, Store_Path, Generation_Bank : String;
-      Expected_Plan, Health_Receipt : Digest; Status : out Outcome) is
+      Expected_Plan, Health_Receipt : Digest; Deadline : Counter; Status : out Outcome) is
       Root, State : MC_FS.Root; Lock, Root_Lock : MC_FS.File; Store : MC_Store.Store;
       RS : Pkg_Root_State.State; Before, After, Prior, Discarded : GD.Descriptor; M : GM.Manifest;
       P, Old_Plan : Plan_Access := null; Encoded : Buffer_Access := null; Used : Natural;
       Hold : Staging.Verified_Generation; Audit : Pkg_Recovery_Audit.Report;
+      procedure Time_Left (Result : out Outcome) is
+         Now : Counter;
+      begin
+         Result := Invalid_Input; if Deadline = Counter'Last then return; end if;
+         MC_Clock.Boottime_Milliseconds (Now, Result);
+         if Result = OK and then Now >= Deadline then Result := Stale; end if;
+      end Time_Left;
       procedure Guard (Root_ID, Transaction_ID : Identity; Plan, Evidence : Digest;
          Epoch, Fence : Counter; Phase : String; Result : out Outcome) is
       begin
@@ -158,7 +168,9 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
            or else Epoch /= P.Epoch or else Fence /= P.Fence
            or else (Evidence /= Zero_Digest and then Evidence /= Health_Receipt)
            or else Phase in "restore" | "repair-journal" then return; end if;
+         Time_Left (Result); if Result /= OK then return; end if;
          Managed.Guard (Root_ID, Transaction_ID, Plan, Evidence, Epoch, Fence, Phase, Result);
+         if Result = OK then Time_Left (Result); end if;
       end Guard;
       package Engine is new Pkg_File_Engine (Guard);
       C : Engine.Context;
@@ -171,6 +183,7 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
    begin
       Status := Denied;
       if MC_Posix.Euid = 0 or else Expected_Plan = Zero_Digest or else Health_Receipt = Zero_Digest then return; end if;
+      Time_Left (Status); if Status /= OK then return; end if;
       MC_FS.Open_Root (State_Path, State, Status, Private_Only => True);
       if Status = OK then MC_FS.Open_Locked (State, "publication.lock", Lock, Status, Create_If_Missing => False); end if;
       if Status = OK then MC_FS.Open_Locked (State, "root.lock", Root_Lock, Status, Create_If_Missing => False); end if;
@@ -182,6 +195,7 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       if Status = OK and then (P.Changes (1).After.UID /= Word (MC_Posix.Euid)
         or else P.Changes (1).After.GID /= Word (MC_Posix.Egid)) then Status := Denied; end if;
       if Status = OK then Read_Manifest (Store, After, M, Status); end if;
+      if Status = OK then GM.Check_Retention (Store, M, Deadline, Status); end if;
       if Status = OK and then (M.Effect_Contract /= P.Effect_Contract or else M.Epoch /= P.Epoch or else M.Fence /= P.Fence
         or else M.Transaction_ID = P.Transaction_ID) then Status := Denied; end if;
       if Status = OK then Read_State (Root, State, P.Root_ID, RS, Status); end if;
@@ -211,7 +225,7 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       MC_Store.Close (Store); MC_FS.Close (Root_Lock);
       if Status /= OK then Done; return; end if;
       declare Path : constant String := GD.Stage_Path (Generation_Bank, After); begin
-         Staging.Verify_And_Hold (Path & "/root", Path & "/state", Store_Path, After.Manifest, Hold, Status);
+         Staging.Verify_And_Hold (Path & "/root", Path & "/state", Store_Path, After.Manifest, Hold, Deadline, Status);
       end;
       if Status = OK then Engine.Open (Root_Path, State_Path, Store_Path, P.Root_ID, C, Status); end if;
       if Status = OK and then (Engine.Generation (C) /= RS.Generation or else Engine.Accepted_Plan (C) /= RS.Accepted_Plan

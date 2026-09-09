@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT
 -- Synthetic artifacts and test-only authorization; never a production adapter.
 with Ada.Command_Line; with Ada.Directories; with Interfaces.C;
-with MC_Atomic; with MC_FS; with MC_Hex; with MC_Posix; with MC_Runtime; with MC_Log_Format;
+with MC_Clock; with MC_Atomic; with MC_FS; with MC_Hex; with MC_Posix; with MC_Runtime; with MC_Log_Format;
 with MC_SHA256; with MC_Store; with MC_Text;
 with MC_Types; use MC_Types;
 with Pkg_File_Plan; with Pkg_Generation_Manifest; with Pkg_Generation_Stage; with Pkg_Root_State;
@@ -14,6 +14,7 @@ procedure Run_Generation_Stage_Tests with SPARK_Mode => Off is
    use type GM.Manifest; use type MC_FS.Entry_Kind;
    M, Decoded, Bad : GM.Manifest;
    Manifest_Digest, Attrs, Payload, Catalog, Receipt, Ignored : Digest;
+   Deadline : Counter := 0;
    S : Outcome; Store : MC_Store.Store; Root, State : MC_FS.Root; F : MC_FS.File;
    type Plan_Access is access FP.Plan;
    P, Q : constant Plan_Access := new FP.Plan;
@@ -68,10 +69,10 @@ procedure Run_Generation_Stage_Tests with SPARK_Mode => Off is
       MC_Store.Put (Store, Plan_Bytes (1 .. Used), D, S); Need ("store batch"); end Save;
    procedure Next is
    begin Stage.Advance (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2),
-      Ada.Command_Line.Argument (3), Manifest_Digest, Completed, S); end Next;
+      Ada.Command_Line.Argument (3), Manifest_Digest, Completed, Deadline, S); end Next;
    procedure Inspect is
    begin Stage.Inspect (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2),
-      Ada.Command_Line.Argument (3), Manifest_Digest, S); end Inspect;
+      Ada.Command_Line.Argument (3), Manifest_Digest, Deadline, S); end Inspect;
    procedure Commit_Window (Published : Boolean) is
       RS : Pkg_Root_State.State; Frame : Pkg_Root_State.Frame; N : Natural;
       Last_Frame : MC_Log_Format.Frame;
@@ -96,6 +97,7 @@ procedure Run_Generation_Stage_Tests with SPARK_Mode => Off is
 begin
    Expect (Ada.Command_Line.Argument_Count = 3, "fresh private directories required");
    MC_Runtime.Initialize (S); Need ("runtime");
+   MC_Clock.Boottime_Milliseconds (Deadline, S); Need ("stage clock"); Deadline := Deadline + 600_000;
    MC_Store.Initialize (Ada.Command_Line.Argument (3), Store, S); Need ("store");
    MC_Store.Put (Store, Bytes'(0, 0), Attrs, S); Need ("attributes");
    MC_Store.Put (Store, Bytes'(97, 98, 99), Payload, S); Need ("payload");
@@ -143,26 +145,47 @@ begin
    Encoded (129) := 1; GM.Decode (Encoded (1 .. Manifest_Used), Bad, S); Expect (S = Invalid_Input, "reserved bytes refused"); Encoded (129) := 0;
    GM.Decode (Encoded (1 .. Manifest_Used - 1), Bad, S); Expect (S = Invalid_Input, "truncated manifest refused");
    GM.Decode (Encoded (1 .. Manifest_Used + 1), Bad, S); Expect (S = Invalid_Input, "trailing manifest bytes refused");
+   declare Wire, Damaged : Bytes (1 .. GM.Max_Bytes); Size : Natural; Native, Readback : GM.Manifest; begin
+      Native := M; Native.Format := GM.Native_V2;
+      Expect (not GM.Valid (Native), "native format requires a retention root");
+      Native.Catalog_Closure := (others => 91);
+      GM.Encode (Native, Wire, Size, S); Need ("encode versioned retention binding");
+      Expect (Wire (1 .. 8) = Bytes'(78, 73, 65, 71, 69, 78, 48, 50)
+         and then Wire (129 .. 160) = Native.Catalog_Closure, "native header fields exact");
+      GM.Decode (Wire (1 .. Size), Readback, S); Need ("decode native header");
+      Expect (Readback = Native, "full native record round trip");
+      Expect (MC_Hex.Encode (GM.Transaction (Native, 1)) = "3db3acbcc26837f41a20e193447182bb", "native transaction matches independent versioned vector");
+      Damaged := Wire; Damaged (8) := 49; GM.Decode (Damaged (1 .. Size), Readback, S);
+      Expect (S = Invalid_Input and then Readback = GM.Manifest'(others => <>), "native header cannot be relabeled as v1");
+      Damaged := Wire; Damaged (129 .. 160) := Zero_Digest; GM.Decode (Damaged (1 .. Size), Readback, S);
+      Expect (S = Invalid_Input and then Readback = GM.Manifest'(others => <>), "missing closure clears decoded output");
+      Damaged := Wire; Damaged (8) := 51; GM.Decode (Damaged (1 .. Size), Readback, S);
+      Expect (S = Unsupported and then Readback = GM.Manifest'(others => <>), "unknown profile cannot downgrade");
+      Native.Format := GM.Structural_V1; Expect (not GM.Valid (Native), "v1 must keep reserved bytes zero");
+      GM.Check_Retention (Store, M, Deadline, S); Expect (S = Unsupported, "v1 is not native retention evidence");
+      Native.Format := GM.Native_V2; GM.Check_Retention (Store, Native, Counter'Last, S);
+      Expect (S = Invalid_Input, "unbounded retention deadline refused");
+   end;
    Manifest_Digest := MC_SHA256.Hash (Encoded (1 .. Manifest_Used)); MC_Store.Close (Store);
    if MC_Posix.Euid = 0 then
       Stage.Provision (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2), Ada.Command_Line.Argument (3),
-         Encoded (1 .. Manifest_Used), Manifest_Digest, S); Expect (S = Denied, "root provision refused for valid fixture");
+         Encoded (1 .. Manifest_Used), Manifest_Digest, Deadline, S); Expect (S = Denied, "root provision refused for valid fixture");
       Next; Expect (S = Denied, "root advance refused"); Inspect; Expect (S = Denied, "root inspection refused");
       Stage.Verify_And_Hold (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2),
-         Ada.Command_Line.Argument (3), Manifest_Digest, Hold, S);
+         Ada.Command_Line.Argument (3), Manifest_Digest, Hold, Deadline, S);
       Expect (S = Denied and then not Stage.Held (Hold), "root held inspection refused");
       Report; return;
    end if;
    Deny_All := True;
    Stage.Provision (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2), Ada.Command_Line.Argument (3),
-      Encoded (1 .. Manifest_Used), Manifest_Digest, S); Expect (S = Denied, "unauthorized provision refused");
+      Encoded (1 .. Manifest_Used), Manifest_Digest, Deadline, S); Expect (S = Denied, "unauthorized provision refused");
    Deny_All := False;
    Stage.Provision (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2), Ada.Command_Line.Argument (3),
-      Encoded (1 .. Manifest_Used), (others => 9), S); Expect (S = Denied, "wrong manifest digest refused");
+      Encoded (1 .. Manifest_Used), (others => 9), Deadline, S); Expect (S = Denied, "wrong manifest digest refused");
    Stage.Provision (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2), Ada.Command_Line.Argument (3),
-      Encoded (1 .. Manifest_Used), Manifest_Digest, S); Need ("provision stage");
+      Encoded (1 .. Manifest_Used), Manifest_Digest, Deadline, S); Need ("provision stage");
    Stage.Provision (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2), Ada.Command_Line.Argument (3),
-      Encoded (1 .. Manifest_Used), Manifest_Digest, S); Expect (S = Conflict, "no rebootstrap of existing generation");
+      Encoded (1 .. Manifest_Used), Manifest_Digest, Deadline, S); Expect (S = Conflict, "no rebootstrap of existing generation");
    Inspect; Expect (S = Conflict, "unfinished generation never accepted");
    declare
       Name : aliased Interfaces.C.char_array := Interfaces.C.To_C (Ada.Command_Line.Argument (1));
@@ -182,7 +205,7 @@ begin
    Next; Need ("idempotent completed stage"); Expect (Completed = 2, "no extra generation on repeat");
    Inspect; Need ("all 1054 entries verified including 1050 children of one directory");
    Stage.Verify_And_Hold (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2),
-      Ada.Command_Line.Argument (3), Manifest_Digest, Hold, S); Need ("hold verified generation");
+      Ada.Command_Line.Argument (3), Manifest_Digest, Hold, Deadline, S); Need ("hold verified generation");
    Expect (Stage.Held (Hold) and then Stage.Manifest (Hold) = Manifest_Digest, "held manifest binding");
    Next; Expect (S /= OK, "held verification excludes stage writer");
    Inspect; Expect (S /= OK, "held verification excludes second inspection");
@@ -192,7 +215,7 @@ begin
    MC_Store.Open (Ada.Command_Line.Argument (3), Store, S); Need ("publication can reacquire CAS while stage is held");
    MC_Store.Close (Store);
    Stage.Verify_And_Hold (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2),
-      Ada.Command_Line.Argument (3), Manifest_Digest, Hold, S);
+      Ada.Command_Line.Argument (3), Manifest_Digest, Hold, Deadline, S);
    Expect (S = Conflict and then Stage.Held (Hold), "cannot overwrite a held reservation");
    Stage.Close (Hold); Stage.Close (Hold);
    Expect (not Stage.Held (Hold) and then Stage.Manifest (Hold) = Zero_Digest, "close releases and clears reservation");

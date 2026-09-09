@@ -1,13 +1,18 @@
 -- SPDX-License-Identifier: MIT
 with Ada.Unchecked_Deallocation;
+with Pkg_Catalog_Retention;
 with MC_Codec; with MC_FS; with MC_SHA256; with MC_Text;
 package body Pkg_Generation_Manifest with SPARK_Mode => Off is
    use type Byte; use type Word; use type Wide;
    use type Pkg_File_Plan.Kind; use type Pkg_File_Plan.State_Domain;
-   Magic : constant Bytes := (78, 73, 65, 71, 69, 78, 48, 49);
+   subtype Magic_Bytes is Bytes (1 .. 8);
+   function Magic (Format : Format_Kind) return Magic_Bytes is
+     (78, 73, 65, 71, 69, 78, 48, (if Format = Structural_V1 then 49 else 50));
    function Valid (M : Manifest) return Boolean is
    begin
-      if M.Stage_ID = Zero_Identity or else M.Transaction_ID = Zero_Identity
+      if (M.Format = Structural_V1 and then M.Catalog_Closure /= Zero_Digest)
+        or else (M.Format = Native_V2 and then M.Catalog_Closure = Zero_Digest)
+        or else M.Stage_ID = Zero_Identity or else M.Transaction_ID = Zero_Identity
         or else M.Stage_ID = M.Transaction_ID or else M.Epoch = 0 or else M.Fence = 0
         or else M.Catalog = Zero_Digest or else M.Effect_Contract = Zero_Digest
         or else M.Count = 0 or else M.Entries < 3
@@ -27,9 +32,10 @@ package body Pkg_Generation_Manifest with SPARK_Mode => Off is
       B := (others => 0); Used := 0; Status := Invalid_Input;
       if B'First /= 1 or else not Valid (M) then return; end if;
       if B'Length < Header_Size + M.Count * 64 then Status := Exhausted; return; end if;
-      B (1 .. 8) := Magic; B (9 .. 24) := M.Stage_ID; B (25 .. 40) := M.Transaction_ID;
+      B (1 .. 8) := Magic (M.Format); B (9 .. 24) := M.Stage_ID; B (25 .. 40) := M.Transaction_ID;
       MC_Codec.Put64 (B, 41, Wide (M.Epoch)); MC_Codec.Put64 (B, 49, Wide (M.Fence));
       B (57 .. 88) := M.Catalog; B (89 .. 120) := M.Effect_Contract;
+      if M.Format = Native_V2 then B (129 .. 160) := M.Catalog_Closure; end if;
       MC_Codec.Put32 (B, 121, Word (M.Entries)); MC_Codec.Put32 (B, 125, Word (M.Count));
       for I in 1 .. M.Count loop
          B (Pos + 1 .. Pos + 32) := M.Batches (I).Plan;
@@ -38,30 +44,40 @@ package body Pkg_Generation_Manifest with SPARK_Mode => Off is
       Used := Pos; Status := OK;
    end Encode;
    procedure Decode (B : Bytes; M : out Manifest; Status : out Outcome) is
-      Pos : Natural := Header_Size;
+      Pos : Natural := Header_Size; Candidate : Manifest;
    begin
       M := (others => <>); Status := Invalid_Input;
-      if B'First /= 1 or else B'Length < Header_Size or else B'Length > Max_Bytes
-        or else B (1 .. 8) /= Magic then return; end if;
-      for I in 129 .. Header_Size loop if B (I) /= 0 then return; end if; end loop;
+      if B'First /= 1 or else B'Length < Header_Size or else B'Length > Max_Bytes then return; end if;
+      if B (1 .. 8) = Magic (Structural_V1) then
+         for I in 129 .. Header_Size loop if B (I) /= 0 then return; end if; end loop;
+      elsif B (1 .. 8) = Magic (Native_V2) then
+         Candidate.Format := Native_V2; Candidate.Catalog_Closure := B (129 .. 160);
+      else Status := Unsupported; return; end if;
       if MC_Codec.U64 (B, 41) > Wide (Counter'Last) or else MC_Codec.U64 (B, 49) > Wide (Counter'Last)
         or else MC_Codec.U32 (B, 121) > Word (Max_Entries)
         or else MC_Codec.U32 (B, 125) > Word (Max_Batches) then return; end if;
-      M.Stage_ID := B (9 .. 24); M.Transaction_ID := B (25 .. 40);
-      M.Epoch := Counter (MC_Codec.U64 (B, 41)); M.Fence := Counter (MC_Codec.U64 (B, 49));
-      M.Catalog := B (57 .. 88); M.Effect_Contract := B (89 .. 120);
-      M.Entries := Natural (MC_Codec.U32 (B, 121)); M.Count := Natural (MC_Codec.U32 (B, 125));
-      if B'Length /= Header_Size + M.Count * 64 then return; end if;
-      for I in 1 .. M.Count loop
-         M.Batches (I).Plan := B (Pos + 1 .. Pos + 32);
-         M.Batches (I).Receipt := B (Pos + 33 .. Pos + 64); Pos := Pos + 64;
+      Candidate.Stage_ID := B (9 .. 24); Candidate.Transaction_ID := B (25 .. 40);
+      Candidate.Epoch := Counter (MC_Codec.U64 (B, 41)); Candidate.Fence := Counter (MC_Codec.U64 (B, 49));
+      Candidate.Catalog := B (57 .. 88); Candidate.Effect_Contract := B (89 .. 120);
+      Candidate.Entries := Natural (MC_Codec.U32 (B, 121)); Candidate.Count := Natural (MC_Codec.U32 (B, 125));
+      if B'Length /= Header_Size + Candidate.Count * 64 then return; end if;
+      for I in 1 .. Candidate.Count loop
+         Candidate.Batches (I).Plan := B (Pos + 1 .. Pos + 32);
+         Candidate.Batches (I).Receipt := B (Pos + 33 .. Pos + 64); Pos := Pos + 64;
       end loop;
-      if Valid (M) then Status := OK; end if;
+      if Valid (Candidate) then M := Candidate; Status := OK; end if;
    end Decode;
+   procedure Check_Retention (S : in out MC_Store.Store; M : Manifest;
+                              Deadline : Counter; Status : out Outcome) is
+   begin
+      Status := Invalid_Input; if not Valid (M) or else Deadline = Counter'Last then return; end if;
+      if M.Format /= Native_V2 then Status := Unsupported; return; end if;
+      Pkg_Catalog_Retention.Verify (S, M.Catalog, M.Catalog_Closure, Deadline, Status);
+   end Check_Retention;
    function Transaction (M : Manifest; Index : Positive) return Identity is
       B : Bytes (1 .. 28) := (others => 0); D : Digest;
    begin
-      B (1 .. 8) := Magic; B (9 .. 24) := M.Transaction_ID;
+      B (1 .. 8) := Magic (M.Format); B (9 .. 24) := M.Transaction_ID;
       MC_Codec.Put32 (B, 25, Word (Index)); D := MC_SHA256.Hash (B);
       return D (1 .. 16);
    end Transaction;

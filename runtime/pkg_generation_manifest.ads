@@ -10,7 +10,10 @@ package Pkg_Generation_Manifest with SPARK_Mode => Off is
       Plan, Receipt : Digest := Zero_Digest;
    end record;
    type Batch_Array is array (Positive range 1 .. Max_Batches) of Batch;
+   type Format_Kind is (Structural_V1, Native_V2);
    type Manifest is record
+      Format : Format_Kind := Structural_V1;
+      Catalog_Closure : Digest := Zero_Digest;
       Stage_ID, Transaction_ID : Identity := Zero_Identity;
       Epoch, Fence : Counter := 0;
       Catalog, Effect_Contract : Digest := Zero_Digest;
@@ -25,6 +28,16 @@ package Pkg_Generation_Manifest with SPARK_Mode => Off is
    procedure Load_Plan (S : MC_Store.Store; M : Manifest; Index : Positive;
                         P : out Pkg_File_Plan.Plan; Status : out Outcome);
    procedure Check (S : MC_Store.Store; M : Manifest; Status : out Outcome);
+   procedure Check_Retention (S : in out MC_Store.Store; M : Manifest;
+                              Deadline : Counter; Status : out Outcome);
+   -- NIAGEN02 binds Catalog_Closure in header bytes 129..160. NIAGEN01 keeps
+   -- these bytes reserved/zero and retains its original transaction derivation.
+   -- Check remains the structural file-plan check. Check_Retention requires v2,
+   -- a finite explicit deadline, and the exact native catalog closure, verified
+   -- before any catalog reconstruction can hide a missing derived object.
+   -- The existing manifest pin roots the nested closure; no second pin identity
+   -- or installed-state mapping is introduced. GC must traverse these typed roots.
+   -- v1 remains an isolated structural staging/read format, not native evidence.
    -- Content-bound staging format, never an authorization or installed database.
    -- Each batch creates absent objects only, in component-wise preorder. The
    -- first two entries are catalog (regular, hash=M.Catalog) and tree (directory).

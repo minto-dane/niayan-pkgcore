@@ -12,17 +12,21 @@ package Pkg_Generation_Publisher with SPARK_Mode => Off is
    procedure Provision (Root_Path, State_Path : String; Root_ID : Identity;
       Bootstrap_Grant : Digest; Status : out Outcome);
    procedure Publish (Root_Path, State_Path, Store_Path, Generation_Bank : String;
-      Expected_Plan, Health_Receipt : Digest; Status : out Outcome);
+      Expected_Plan, Health_Receipt : Digest; Deadline : Counter; Status : out Outcome);
    procedure Read_Current (Root_Path, State_Path, Store_Path : String; Root_ID : Identity;
       Current : out Pkg_Generation_Descriptor.Descriptor; Status : out Outcome);
    procedure Read_Current_Catalog (Root_Path, State_Path, Store_Path : String; Root_ID : Identity;
       Deadline : Counter; Current : out Pkg_Generation_Descriptor.Descriptor;
       Value : in out Pkg_Selected_Catalog.Catalog; Payload : in out Pkg_Payload_Index.Index;
       Status : out Outcome);
+   -- Publish and Read_Current_Catalog require a v2 manifest with its exact CAS
+   -- retention closure. Structural v1 remains readable only as metadata. Publish
+   -- requires a finite deadline and checks it in the composed execution guard.
    -- Reobserves the accepted native catalog and payload while holding the same
    -- publication/root reservations used for descriptor and journal validation.
    -- Every failure clears descriptor, catalog and payload together. CAS readers
-   -- may restore derived objects, but never alter accepted publication state.
+   -- check the pinned closure BEFORE catalog reconstruction, so missing derived
+   -- objects fail. No accepted publication state is altered by these readers.
    -- Locks are released on return: this is a consistent planning observation,
    -- NOT a lease or update grant. Publish still compares the exact predecessor
    -- under its own reservation; metadata-only Read_Current is not native proof.

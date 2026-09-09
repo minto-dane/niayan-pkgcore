@@ -7,11 +7,13 @@ lineage, manifest, and independently reconstructed catalog frames. This is not
 a general journal validator, authorization engine, or physical DEB root check.
 """
 import argparse
+from collections import Counter
 import hashlib
 import json
 from pathlib import Path
 import struct
 from compare_catalog_store import reference
+from compare_catalog_retention import objects
 
 def sha(data): return hashlib.sha256(data).digest()
 def u64(data, pos): return struct.unpack_from('>Q', data, pos)[0]
@@ -41,27 +43,43 @@ def check(root, state, cas, bank, media, native):
     before, after = descriptor(cas,before_hash), descriptor(cas,after_hash)
     assert after['previous'] == before_hash and before['previous'] == bytes(32)
     assert after['catalog'] == raw[112:144] == plan[72:104]
-    expected = {}
+    expected = {}; closures = {}; missing = Counter()
     for d, name, generation in [(before,'empty.deb',1),(after,'consumer-upgrade.deb',2)]:
         assert d['root'] == root_id and d['generation'] == generation
         manifest = cas_read(cas,d['manifest'])
-        assert len(manifest) == 224 and manifest[:8] == b'NIAGEN01'
+        assert len(manifest) == 224 and manifest[:8] == b'NIAGEN02'
         assert manifest[8:24] == d['stage'] and manifest[56:88] == d['catalog']
         index, frame = reference(media,[name]); assert sha(frame) == d['catalog']
         assert cas_read(cas,d['catalog']) == frame
         original = frame[56:88]; assert cas_read(cas,original) == (media/name).read_bytes()
+        retained, _, _ = objects(media/name); retained[sha(frame)] = frame
+        closure = b'NIACLOS1' + sha(frame) + bytes.fromhex(index['INDEX']) + struct.pack('>Q',len(retained)) + b''.join(sorted(retained))
+        assert manifest[128:160] == sha(closure) and cas_read(cas,sha(closure)) == closure
+        assert (cas/'pins'/manifest[24:40].hex()).read_bytes() == d['manifest']
+        for digest, data in retained.items(): assert cas_read(cas,digest) == data
+        closures[generation] = dict(hash=sha(closure).hex(), objects=len(retained))
+        for phase in range(5 if generation == 2 else 4):
+            missing.update((str(phase), digest.hex()) for digest in [sha(closure), *retained])
+        batch = cas_read(cas,manifest[160:192])
+        assert batch[:8] == b'MCPLAN02' and batch[8:24] == d['stage']
+        assert batch[24:40] == sha(b'NIAGEN02' + manifest[24:40] + struct.pack('>I',1))[:16]
+        assert batch[72:104] == d['catalog']
         stage_root = bank/d['stage'].hex()/'root'
         assert (stage_root/'catalog').read_bytes() == frame
         # The version file is a deliberate synthetic staging effect.
         assert (stage_root/'tree/version').read_bytes() == frame
         expected[generation] = [d['hash'].hex(),str(generation),d['catalog'].hex(),index['INDEX'],'1',str(index['CLAIMS'])]
-    rows = [line.split()[1:] for line in native.read_text().splitlines() if line.startswith('CURRENT_CATALOG ')]
+    lines = native.read_text().splitlines()
+    faults = [line.split()[1:] for line in lines if line.startswith('RETENTION_MISSING ')]
+    assert all(len(row) == 3 and row[2] not in {'OK', 'CONFLICT'} for row in faults)
+    assert Counter((row[0], row[1]) for row in faults) == missing
+    rows = [line.split()[1:] for line in lines if line.startswith('CURRENT_CATALOG ')]
     assert rows and {int(row[1]) for row in rows} == {1,2}
     assert [int(row[1]) for row in rows] == sorted(int(row[1]) for row in rows)
     assert all(row == expected[int(row[1])] for row in rows)
     assert rows[-1][0] == after_hash.hex()
     return dict(result='pass-for-two-published-native-catalog-observations',root=root_id.hex(),accepted_plan=raw[80:112].hex(),
-                observations=len(rows),generations=[dict(generation=g,descriptor=v[0],catalog=v[2],payload=v[3],claims=int(v[5])) for g,v in expected.items()],
+                observations=len(rows),missing_retention_checks=len(faults),generations=[dict(generation=g,descriptor=v[0],catalog=v[2],payload=v[3],claims=int(v[5]),retention=closures[g]) for g,v in expected.items()],
                 physical_deb_payload_applied=False,production_authorization=False)
 
 if __name__ == '__main__':

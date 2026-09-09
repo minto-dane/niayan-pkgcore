@@ -6,11 +6,11 @@
 -- staging effect and is not an application of the DEB payload.
 with Ada.Command_Line; with Ada.Directories; with Ada.Text_IO; with Ada.Unchecked_Deallocation;
 with Interfaces.C; with System;
-with MC_Atomic; with MC_Clock; with MC_Codec; with MC_Config_Auth; with MC_Config_Receipt;
+with MC_Dirents; with MC_Atomic; with MC_Clock; with MC_Codec; with MC_Config_Auth; with MC_Config_Receipt;
 with MC_Contract_Profile; with MC_FS; with MC_Hex; with MC_Log_Format; with MC_Posix;
 with MC_Runtime; with MC_SHA256; with MC_Stop_Barrier; with MC_Store; with MC_Text;
 with MC_Types; use MC_Types;
-with Pkg_Catalog_Store; with Pkg_Deb_Metadata; with Pkg_Deb_Payload;
+with Pkg_Catalog_Retention; with Pkg_Catalog_Store; with Pkg_Deb_Metadata; with Pkg_Deb_Payload;
 with Pkg_Payload_Index; with Pkg_Selected_Catalog;
 with Pkg_File_Plan; with Pkg_Generation_Descriptor; with Pkg_Generation_Manifest;
 with Pkg_Generation_Publisher; with Pkg_Generation_Stage; with Pkg_Managed_Engine; with Pkg_Root_State;
@@ -23,7 +23,7 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    package SB renames MC_Stop_Barrier; package RM renames Resolver_Model;
    use type Interfaces.C.int; use type Interfaces.C.unsigned;
    use type Interfaces.C.unsigned_long_long; use type Byte; use type GD.Descriptor;
-   use type RM.Binding;
+   use type RM.Binding; use type MC_FS.Entry_Kind; use type GM.Format_Kind;
    Root_ID : constant Identity := (others => 31);
    Grant : constant Digest := (others => 32);
    Boot : constant Identity := (others => 33);
@@ -57,6 +57,19 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    Inject : Fault := None;
    Native_Calls, Recheck_Calls, Config_Calls : Natural := 0;
    Probed : Boolean := False;
+   Expire_Stage, Expire_Publication : Boolean := False;
+   Expiry_Callbacks : Natural := 0;
+   procedure Await_Deadline is
+      Now : Counter; Local : Outcome;
+   begin
+      Expiry_Callbacks := Expiry_Callbacks + 1;
+      loop
+         MC_Clock.Boottime_Milliseconds (Now, Local);
+         Expect (Local = OK, "callback deadline clock");
+         exit when Now >= Observation_Deadline;
+         delay Duration (Observation_Deadline - Now) / 1_000;
+      end loop;
+   end Await_Deadline;
    procedure Probe_Reservations;
    SK1, SK2 : Bytes (1 .. 64); PK1, PK2 : Digest;
    function Keypair (PK, SK, Seed : System.Address) return Interfaces.C.int
@@ -80,6 +93,7 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       if Phase = "commit" and then (Inject = Commit_Denied or else Evidence /= Receipt) then return; end if;
       if not Probed and then Phase = "prepare" and then Inject = Commit_Denied then Probe_Reservations; end if;
       Status := OK;
+      if Expire_Publication and then Phase = "prepare" then Await_Deadline; end if;
    end Authorize;
    procedure Observe_Barrier (R, T : Identity; H : Digest;
       Policy : out SB.Policy; State : out SB.State; Now : out Counter;
@@ -187,6 +201,7 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
         and then Phase in "stage:prepare" | "stage:capture" | "stage:apply" | "stage:commit"
           | "stage:file-effect" | "stage:publish-file" | "stage:finish-terminal" then Status := OK;
       end if;
+      if Status = OK and then Expire_Stage and then Phase = "stage:inspect" then Await_Deadline; end if;
    end Authorize_Stage;
    procedure Bootstrap (R : Identity; G : Digest; Status : out Outcome) is
    begin Status := (if Inject /= Bootstrap_Denied and then R = Root_ID and then G = Grant then OK else Denied); end Bootstrap;
@@ -204,7 +219,7 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
          D, Observed_Catalog, Observed_Payload, Local);
       Expect (Local /= OK and then D = GD.Empty and then not NC.Sealed (Observed_Catalog)
          and then not PX.Sealed (Observed_Payload), "native observer cannot pass the publisher reservation");
-      Stage.Advance (Path & "/root", Path & "/state", Store_Path, Manifest_Hash, Count, Local);
+      Stage.Advance (Path & "/root", Path & "/state", Store_Path, Manifest_Hash, Count, Observation_Deadline, Local);
       Expect (Local /= OK, "publisher retains verified stage writer reservation");
       MC_FS.Open_Root (Path & "/state", Stage_State, Local, Private_Only => True);
       Expect (Local = OK, "open selected stage state during publication");
@@ -214,7 +229,7 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    exception when others => MC_FS.Close (Lock); MC_FS.Close (Stage_State); raise;
    end Probe_Reservations;
    procedure Publish is
-   begin Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, Plan_Hash, Receipt, S); end Publish;
+   begin Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, Plan_Hash, Receipt, Observation_Deadline, S); end Publish;
    procedure Read_Native (Deadline : Counter) is
    begin
       Publisher.Read_Current_Catalog (Root_Path, State_Path, Store_Path, Root_ID, Deadline,
@@ -226,6 +241,64 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
          and then not PX.Sealed (Observed_Payload) and then PX.Fingerprint (Observed_Payload) = Zero_Digest,
          "failed observation clears all native outputs");
    end Native_Hidden;
+   procedure Check_Missing_Retention (Phase : Natural; Wire : Bytes := (1 .. 0 => 0)) is
+      CAS, Check_State, Check_Root : MC_FS.Root; F : MC_FS.Entry_Info;
+      Closure : Bytes (1 .. 4096); Size, Count, N : Natural;
+      Object : Digest; Hold : Stage.Verified_Generation;
+      Path : constant String := GD.Stage_Path (Bank, After);
+      Snapshot, Latest : Pkg_Root_State.Frame; Names : MC_Dirents.Listing;
+      Metadata : GD.Descriptor;
+      function Object_Path (Hash : Digest) return String is
+         Hex : constant String := MC_Hex.Encode (Hash);
+      begin return "objects/" & Hex (1 .. 2) & "/" & Hex (3 .. 64); end Object_Path;
+   begin
+      MC_Store.Open (Store_Path, Store, S); Need ("open retained member list");
+      MC_Store.Read_Object (Store, M.Catalog_Closure, Closure, Size, S); Need ("bound native closure");
+      Count := Natural (MC_Codec.U64 (Closure, 73));
+      Expect (Size = 80 + 32 * Count, "closure fixture framing"); MC_Store.Close (Store);
+      MC_FS.Open_Root (Store_Path, CAS, S, Private_Only => True); Need ("retention fault CAS");
+      MC_FS.Open_Root ((if Phase <= 2 then Path & "/state" else State_Path), Check_State, S, Private_Only => True);
+      Need ("retention fault state");
+      if Phase = 0 then
+         MC_FS.Open_Root (Path & "/root", Check_Root, S, Private_Only => True); Need ("unprovisioned root");
+      else
+         MC_Atomic.Read (Check_State, "root.state", Snapshot, N, S); Need ("retain state before missing member");
+         Expect (N = Snapshot'Length, "complete prior state");
+      end if;
+      for I in 0 .. Count loop
+         if I = 0 then Object := M.Catalog_Closure; else Object := Closure (81 + 32 * (I - 1) .. 112 + 32 * (I - 1)); end if;
+         if Phase = 4 then Read_Native (Observation_Deadline); Need ("seed native result before loss"); end if;
+         MC_FS.Rename (CAS, Object_Path (Object), "held-retention-object", True, S); Need ("hide retained object");
+         case Phase is
+            when 0 => Stage.Provision (Path & "/root", Path & "/state", Store_Path, Wire, Manifest_Hash, Observation_Deadline, S);
+            when 1 => Stage.Advance (Path & "/root", Path & "/state", Store_Path, Manifest_Hash, Completed, Observation_Deadline, S);
+            when 2 => Stage.Verify_And_Hold (Path & "/root", Path & "/state", Store_Path, Manifest_Hash, Hold, Observation_Deadline, S);
+            when 3 => Publish;
+            when 4 =>
+               Publisher.Read_Current (Root_Path, State_Path, Store_Path, Root_ID, Metadata, S);
+               Need ("metadata observation stays structural"); Expect (Metadata = After, "metadata binding retained during object loss");
+               Read_Native (Observation_Deadline);
+            when others => raise Program_Error;
+         end case;
+         Ada.Text_IO.Put_Line ("RETENTION_MISSING" & Natural'Image (Phase) & " " & MC_Hex.Encode (Object) & " " & Outcome'Image (S));
+         Expect (S /= OK and then S /= Conflict, "missing retention cannot be hidden by a reservation conflict");
+         if Phase = 1 then Expect (Completed = 0, "no private batch accepted on missing retention"); end if;
+         if Phase = 2 then Expect (not Stage.Held (Hold) and then Stage.Manifest (Hold) = Zero_Digest, "failed retention clears held inspection"); end if;
+         if Phase = 4 then Native_Hidden; end if;
+         MC_FS.Stat (CAS, Object_Path (Object), F, S); Need ("observe retained object loss");
+         Expect (F.Kind = MC_FS.Absent, "stage and publication never regenerate a missing retained object");
+         if Phase = 0 then
+            MC_FS.List_Names (Check_State, "", Names, S); Need ("unmodified unprovisioned state"); Expect (Names.Count = 0, "no state bootstrap on retention loss");
+            MC_FS.List_Names (Check_Root, "", Names, S); Need ("unmodified unprovisioned root"); Expect (Names.Count = 0, "no root bootstrap on retention loss");
+         else
+            MC_Atomic.Read (Check_State, "root.state", Latest, N, S); Need ("read state after retention refusal");
+            Expect (N = Latest'Length and then Latest = Snapshot, "retention refusal leaves exact root state unchanged");
+         end if;
+         MC_FS.Rename (CAS, "held-retention-object", Object_Path (Object), True, S); Need ("restore exact retained object");
+      end loop;
+      Stage.Close (Hold); MC_FS.Close (Check_State); MC_FS.Close (Check_Root); MC_FS.Close (CAS);
+   exception when others => Stage.Close (Hold); MC_Store.Close (Store); MC_FS.Close (Check_State); MC_FS.Close (Check_Root); MC_FS.Close (CAS); raise;
+   end Check_Missing_Retention;
    procedure Read_Current is
       Metadata : GD.Descriptor; Metadata_Status : Outcome;
    begin
@@ -244,6 +317,86 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    procedure Save_Plan is
    begin FP.Encode (P.all, B.all, Used, S); Need ("encode publication plan");
       MC_Store.Put (Store, B (1 .. Used), Plan_Hash, S); Need ("store publication plan"); end Save_Plan;
+   procedure Check_Deadlines is
+      Path : constant String := GD.Stage_Path (Bank, After); Hold : Stage.Verified_Generation;
+      Deadlines : constant array (1 .. 2) of Counter := (0, Counter'Last);
+      Expected : Outcome; State_Root : MC_FS.Root; Prior_State, Later_State : Pkg_Root_State.Frame; N, Wire_Size : Natural;
+      Wire : Bytes (1 .. GM.Max_Bytes);
+   begin
+      MC_FS.Open_Root (State_Path, State_Root, S, Private_Only => True); Need ("deadline state observation");
+      MC_Atomic.Read (State_Root, "root.state", Prior_State, N, S); Need ("state before deadline refusals");
+      MC_Store.Open (Store_Path, Store, S); Need ("deadline fixture CAS");
+      MC_Store.Read_Object (Store, Manifest_Hash, Wire, Wire_Size, S); Need ("deadline fixture manifest"); MC_Store.Close (Store);
+      for Deadline of Deadlines loop
+         Expected := (if Deadline = 0 then Stale else Invalid_Input);
+         Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, Plan_Hash, Receipt, Deadline, S);
+         Expect (S = Expected, "publication requires a live finite deadline");
+         Stage.Provision (Path & "/root", Path & "/state", Store_Path, Wire (1 .. Wire_Size), Manifest_Hash, Deadline, S);
+         Expect (S = Expected, "stage provision requires a live finite deadline");
+         Stage.Advance (Path & "/root", Path & "/state", Store_Path, Manifest_Hash, Completed, Deadline, S);
+         Expect (S = Expected and then Completed = 0, "staging advance requires a live finite deadline");
+         Stage.Verify_And_Hold (Path & "/root", Path & "/state", Store_Path, Manifest_Hash, Hold, Deadline, S);
+         Expect (S = Expected and then not Stage.Held (Hold), "held inspection requires a live finite deadline");
+         Stage.Inspect (Path & "/root", Path & "/state", Store_Path, Manifest_Hash, Deadline, S);
+         Expect (S = Expected, "inspection wrapper preserves deadline refusal");
+         Read_Native (Deadline); Expect (S = Expected, "native observation requires a finite deadline"); Native_Hidden;
+      end loop;
+      MC_Atomic.Read (State_Root, "root.state", Later_State, N, S); Need ("state after deadline refusals");
+      Expect (N = Later_State'Length and then Later_State = Prior_State, "deadline refusals preserve publication state");
+      Stage.Close (Hold); MC_FS.Close (State_Root);
+   exception when others => MC_Store.Close (Store); Stage.Close (Hold); MC_FS.Close (State_Root); raise;
+   end Check_Deadlines;
+   procedure Check_Callback_Deadlines is
+      Saved : constant Counter := Observation_Deadline;
+      Path : constant String := GD.Stage_Path (Bank, After); Hold : Stage.Verified_Generation;
+      State_Root : MC_FS.Root; Prior_State, Later_State : Pkg_Root_State.Frame; N : Natural;
+   begin
+      MC_FS.Open_Root (State_Path, State_Root, S, Private_Only => True); Need ("callback state observation");
+      MC_Atomic.Read (State_Root, "root.state", Prior_State, N, S); Need ("state before delayed authority");
+      for Publication in Boolean loop
+         Expiry_Callbacks := 0;
+         MC_Clock.Boottime_Milliseconds (Observation_Deadline, S); Need ("delayed authority clock");
+         Observation_Deadline := Observation_Deadline + 3_000;
+         Expire_Publication := Publication; Expire_Stage := not Publication;
+         if Publication then Publish;
+         else Stage.Verify_And_Hold (Path & "/root", Path & "/state", Store_Path, Manifest_Hash, Hold, Observation_Deadline, S);
+         end if;
+         Ada.Text_IO.Put_Line ("RETENTION_CALLBACK " & Boolean'Image (Publication) & " " & Outcome'Image (S) & Natural'Image (Expiry_Callbacks));
+         Expect (S = Stale and then Expiry_Callbacks > 0 and then not Stage.Held (Hold),
+            "approval returned after deadline cannot authorize work");
+         Expire_Publication := False; Expire_Stage := False; Observation_Deadline := Saved;
+         MC_Atomic.Read (State_Root, "root.state", Later_State, N, S); Need ("state after delayed authority");
+         Expect (N = Later_State'Length and then Later_State = Prior_State, "delayed approval leaves accepted state unchanged");
+      end loop;
+      Stage.Close (Hold); MC_FS.Close (State_Root);
+   exception when others =>
+      Expire_Publication := False; Expire_Stage := False; Observation_Deadline := Saved;
+      Stage.Close (Hold); MC_FS.Close (State_Root); raise;
+   end Check_Callback_Deadlines;
+   procedure Check_Structural_Publication is
+      Legacy : GM.Manifest := M; Descriptor : GD.Descriptor := After;
+      Legacy_Manifest, Legacy_Plan : Digest; Wire : Bytes (1 .. GM.Max_Bytes); N : Natural;
+   begin
+      MC_Store.Open (Store_Path, Store, S); Need ("structural-only publication fixture");
+      Legacy.Format := GM.Structural_V1; Legacy.Catalog_Closure := Zero_Digest;
+      Legacy.Transaction_ID := (others => 81);
+      GM.Load_Plan (Store, M, 1, Batch.all, S); Need ("retain native batch fixture");
+      Batch.Transaction_ID := GM.Transaction (Legacy, 1);
+      FP.Encode (Batch.all, B.all, N, S); Need ("encode valid structural batch");
+      MC_Store.Put (Store, B (1 .. N), Legacy.Batches (1).Plan, S); Need ("store structural batch");
+      GM.Check (Store, Legacy, S); Need ("legacy staging remains structurally valid");
+      GM.Encode (Legacy, Wire, N, S); Need ("legacy manifest encoding");
+      MC_Store.Put (Store, Wire (1 .. N), Legacy_Manifest, S); Need ("legacy manifest storage");
+      MC_Store.Pin (Store, Legacy.Transaction_ID, Legacy_Manifest, S); Need ("legacy immutable pin");
+      Descriptor.Manifest := Legacy_Manifest;
+      MC_Store.Put (Store, GD.Encode (Descriptor), Ignored, S); Need ("legacy descriptor storage");
+      GD.Compile (Before, Descriptor, (others => 82), 1, 2, Mark, Word (MC_Posix.Euid), Word (MC_Posix.Egid), Batch.all, S);
+      Need ("legacy descriptor plan"); FP.Encode (Batch.all, B.all, N, S); Need ("legacy publication encoding");
+      MC_Store.Put (Store, B (1 .. N), Legacy_Plan, S); Need ("legacy publication candidate"); MC_Store.Close (Store);
+      Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, Legacy_Plan, Receipt, Observation_Deadline, S);
+      Expect (S = Unsupported, "structurally valid v1 cannot bypass native publication retention");
+   exception when others => MC_Store.Close (Store); raise;
+   end Check_Structural_Publication;
    procedure Check_Plan_Restrictions is
       Original : constant Digest := Plan_Hash;
    begin
@@ -306,6 +459,10 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       else Build_Native_Catalog (N); end if;
       M := (Stage_ID => (others => Byte (40 + N)), Transaction_ID => (others => Byte (50 + N)),
          Epoch => 1, Fence => 2, Catalog => Catalog, Effect_Contract => Mark, Entries => 3, Count => 1, others => <>);
+      if MC_Posix.Euid /= 0 then
+         M.Format := GM.Native_V2;
+         Pkg_Catalog_Retention.Prepare (Store, Catalog, Observation_Deadline, M.Catalog_Closure, S); Need ("native generation closure");
+      end if;
       FP.Clear (Batch.all); Batch.Root_ID := M.Stage_ID; Batch.Transaction_ID := GM.Transaction (M, 1);
       Batch.Target_Generation := 1; Batch.Epoch := 1; Batch.Fence := 2;
       Batch.Package_Set := Catalog; Batch.Effect_Contract := Mark; Batch.Count := 3;
@@ -333,7 +490,8 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
          Ada.Directories.Create_Directory (Path);
          Ada.Directories.Create_Directory (Path & "/root"); Ada.Directories.Create_Directory (Path & "/state");
          if MC_Posix.Euid /= 0 then
-            Stage.Provision (Path & "/root", Path & "/state", Store_Path, Wire (1 .. N_Bytes), Manifest_Hash, S);
+            Check_Missing_Retention (0, Wire (1 .. N_Bytes));
+            Stage.Provision (Path & "/root", Path & "/state", Store_Path, Wire (1 .. N_Bytes), Manifest_Hash, Observation_Deadline, S);
             Need ("provision selected stage");
          end if;
       end;
@@ -346,7 +504,9 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    end Build;
    procedure Complete_Stage is
       Path : constant String := GD.Stage_Path (Bank, After);
-   begin Stage.Advance (Path & "/root", Path & "/state", Store_Path, Manifest_Hash, Completed, S);
+   begin
+      Check_Missing_Retention (1);
+      Stage.Advance (Path & "/root", Path & "/state", Store_Path, Manifest_Hash, Completed, Observation_Deadline, S);
       Need ("assemble selected stage"); Expect (Completed = 1, "single private batch complete"); end Complete_Stage;
    procedure Commit_Window (Published, Finished : Boolean) is
       RS : Pkg_Root_State.State; Frame : Pkg_Root_State.Frame; N : Natural;
@@ -414,7 +574,9 @@ begin
    end; MC_FS.Close (State);
    Read_Current; Expect (S = Stale and then Current = GD.Empty, "no fictitious initial generation");
    Publish; Expect (S = Conflict, "incomplete stage cannot publish"); Complete_Stage;
+   Check_Missing_Retention (2); Check_Missing_Retention (3); Check_Deadlines;
    Check_Plan_Restrictions;
+   Check_Structural_Publication; Check_Callback_Deadlines;
    for F in Authority_Denied .. Current_Changed loop
       Inject := F; Publish; Expect (S /= OK, "composed gate refuses " & Fault'Image (F));
       Read_Current; Expect (S = Stale and then Current = GD.Empty, "denied preparation leaves no accepted generation");
@@ -425,13 +587,14 @@ begin
    Inject := None; Publish; Need ("resume first publication");
    Read_Current; Need ("read first publication"); Expect (Current = After, "first root/catalog pair exact");
    Publish; Need ("idempotent publication retry");
-   Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, Plan_Hash, Mark, S);
+   Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, Plan_Hash, Mark, Observation_Deadline, S);
    Expect (S = Denied, "recorded health receipt cannot be replaced on retry");
    Publisher.Read_Current (Root_Path, State_Path, Store_Path, Boot, Current, S);
    Expect (S = Denied and then Current = GD.Empty, "readback is bound to publication root identity");
    Expect (Probed and then Config_Calls > 0 and then Native_Calls > 0 and then Recheck_Calls > 0, "full managed gates were reached under reservations");
    First_Plan := Plan_Hash; First_Tx := P.Transaction_ID; Before := After;
    Build (2); Complete_Stage;
+   Check_Missing_Retention (2); Check_Missing_Retention (3); Check_Deadlines;
    Check_Plan_Restrictions;
    Other := After; Other.Previous := Mark;
    GD.Compile (Before, Other, P.Transaction_ID, 1, 2, Mark, Word (MC_Posix.Euid), Word (MC_Posix.Egid), Batch.all, S);
@@ -471,6 +634,7 @@ begin
       Publish; Expect (S /= OK, "missing CAS descriptor blocks retry");
       MC_FS.Rename (CAS, "retained-descriptor", Path, True, S); Need ("restore accepted CAS descriptor"); MC_FS.Close (CAS);
    end;
+   Check_Missing_Retention (4);
    Read_Current; Need ("final exact readback"); Expect (Current = After, "final generation retained");
    declare Name : constant String := "tx-" & MC_Hex.Encode (P.Transaction_ID) & ".log";
       Journal : MC_FS.File; Info : MC_FS.Entry_Info;
@@ -516,7 +680,7 @@ begin
       MC_Store.Open (Store_Path, Store, S); Need ("hold CAS reservation");
       Read_Native (Observation_Deadline); Expect (S /= OK, "native observation requires CAS reservation"); Native_Hidden; MC_Store.Close (Store);
       Read_Current; Need ("all reservations released after failure");
-      Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, First_Plan, Receipt, S);
+      Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, First_Plan, Receipt, Observation_Deadline, S);
       Expect (S = Stale, "old observed generation cannot authorize an obsolete publication");
       Read_Current; Need ("new accepted generation retained"); Expect (Current = After, "old plan cannot change current native catalog");
       MC_FS.Close (CAS);
