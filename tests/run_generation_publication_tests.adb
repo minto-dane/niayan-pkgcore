@@ -12,6 +12,7 @@ with MC_Runtime; with MC_SHA256; with MC_Stop_Barrier; with MC_Store; with MC_Te
 with MC_Types; use MC_Types;
 with Pkg_Catalog_Retention; with Pkg_Catalog_Store; with Pkg_Deb_Metadata; with Pkg_Deb_Payload;
 with Pkg_Payload_Index; with Pkg_Selected_Catalog;
+with Pkg_Deb_Final_Set; with Pkg_Deb_Transition;
 with Pkg_File_Plan; with Pkg_Generation_Descriptor; with Pkg_Generation_Manifest;
 with Pkg_Generation_Publisher; with Pkg_Generation_Stage; with Pkg_Managed_Engine; with Pkg_Root_State;
 with Resolver_Model; with Resolver_Admission; with Resolver_Wire;
@@ -20,10 +21,12 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    package GD renames Pkg_Generation_Descriptor; package GM renames Pkg_Generation_Manifest;
    package FP renames Pkg_File_Plan; package CR renames MC_Config_Receipt;
    package NC renames Pkg_Selected_Catalog; package PX renames Pkg_Payload_Index;
+   package DT renames Pkg_Deb_Transition;
    package SB renames MC_Stop_Barrier; package RM renames Resolver_Model;
    use type Interfaces.C.int; use type Interfaces.C.unsigned;
    use type Interfaces.C.unsigned_long_long; use type Byte; use type GD.Descriptor;
    use type RM.Binding; use type MC_FS.Entry_Kind; use type GM.Format_Kind;
+   use type DT.Failure_Kind;
    Root_ID : constant Identity := (others => 31);
    Grant : constant Digest := (others => 32);
    Boot : constant Identity := (others => 33);
@@ -36,6 +39,10 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    Observed_Catalog : NC.Catalog; Observed_Payload : PX.Index;
    Catalog_Original : Digest := Zero_Digest; Catalog_Size : Counter := 3;
    Observation_Deadline : Counter := 0;
+   Enabled : Pkg_Deb_Final_Set.Architecture_List (1 .. 1);
+   Update_Current : GD.Descriptor; Update_Plan : DT.Plan;
+   Update_Binding, First_Closure : Digest := Zero_Digest;
+   Update_Issue : DT.Finding; Update_Status : Outcome;
    Fixture_Path : constant String := (if Ada.Command_Line.Argument_Count = 5 then Ada.Command_Line.Argument (5)
       else Ada.Directories.Current_Directory & "/tests/fixtures/selected-catalog");
    First_Plan : Digest; First_Tx : Identity;
@@ -241,6 +248,39 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
          and then not PX.Sealed (Observed_Payload) and then PX.Fingerprint (Observed_Payload) = Zero_Digest,
          "failed observation clears all native outputs");
    end Native_Hidden;
+   procedure Read_Update (Expected, Target, Closure : Digest; Deadline : Counter) is
+   begin
+      Publisher.Read_Current_Transition (Root_Path, State_Path, Store_Path, Root_ID,
+         Expected, Target, Closure, "amd64", Enabled, Deadline,
+         Update_Current, Update_Plan, Update_Binding, Update_Issue, Update_Status);
+   end Read_Update;
+   procedure Update_Hidden is
+   begin
+      Expect (Update_Current = GD.Empty and then not DT.Sealed (Update_Plan)
+         and then DT.Count (Update_Plan) = 0 and then DT.Fingerprint (Update_Plan) = Zero_Digest
+         and then Update_Binding = Zero_Digest, "failed update observation clears prior planning evidence");
+   end Update_Hidden;
+   procedure Print_Update (Closure : Digest) is
+      Item : DT.Change; Local : Outcome;
+      function Version (Value : MC_Text.Value) return String is
+        (if MC_Text.Image (Value) = "" then "-" else MC_Text.Image (Value));
+   begin
+      Expect (Update_Status = OK and then DT.Sealed (Update_Plan) and then Update_Issue.Kind = DT.None,
+         "successful update has a complete native transition");
+      Ada.Text_IO.Put_Line ("CURRENT_UPDATE " & MC_Hex.Encode (MC_SHA256.Hash (GD.Encode (Update_Current)))
+         & " " & MC_Hex.Encode (DT.Before_Hash (Update_Plan)) & " " & MC_Hex.Encode (DT.After_Hash (Update_Plan))
+         & " " & MC_Hex.Encode (Closure) & " " & MC_Hex.Encode (DT.Endpoint_Hash (Update_Plan))
+         & " " & MC_Hex.Encode (DT.Fingerprint (Update_Plan)) & " " & MC_Hex.Encode (Update_Binding)
+         & Natural'Image (DT.Count (Update_Plan)));
+      for I in 1 .. DT.Count (Update_Plan) loop
+         DT.Read_Change (Update_Plan, I, Item, Local); Expect (Local = OK, "read observed native change");
+         Ada.Text_IO.Put_Line ("CURRENT_UPDATE_CHANGE " & MC_Hex.Encode (Update_Binding) & Natural'Image (I)
+            & " " & DT.Change_Kind'Image (Item.Kind) & " " & MC_Text.Image (Item.Name)
+            & " " & MC_Text.Image (Item.Architecture) & " " & Version (Item.Before_Version)
+            & " " & Version (Item.After_Version) & " " & MC_Hex.Encode (Item.Before_Original)
+            & " " & MC_Hex.Encode (Item.After_Original));
+      end loop;
+   end Print_Update;
    procedure Check_Missing_Retention (Phase : Natural; Wire : Bytes := (1 .. 0 => 0)) is
       CAS, Check_State, Check_Root : MC_FS.Root; F : MC_FS.Entry_Info;
       Closure : Bytes (1 .. 4096); Size, Count, N : Natural;
@@ -285,6 +325,10 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
          if Phase = 1 then Expect (Completed = 0, "no private batch accepted on missing retention"); end if;
          if Phase = 2 then Expect (not Stage.Held (Hold) and then Stage.Manifest (Hold) = Zero_Digest, "failed retention clears held inspection"); end if;
          if Phase = 4 then Native_Hidden; end if;
+         if Phase = 4 then
+            Read_Update (MC_SHA256.Hash (GD.Encode (After)), Catalog, M.Catalog_Closure, Observation_Deadline);
+            Expect (Update_Status /= OK, "update observation requires every retained baseline object"); Update_Hidden;
+         end if;
          MC_FS.Stat (CAS, Object_Path (Object), F, S); Need ("observe retained object loss");
          Expect (F.Kind = MC_FS.Absent, "stage and publication never regenerate a missing retained object");
          if Phase = 0 then
@@ -305,6 +349,8 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       Publisher.Read_Current (Root_Path, State_Path, Store_Path, Root_ID, Metadata, Metadata_Status);
       Read_Native (Observation_Deadline);
       Expect (S = Metadata_Status and then Current = Metadata, "native and descriptor observation share accepted state checks");
+      Read_Update (MC_SHA256.Hash (GD.Encode ((if S = OK then Current else After))), Catalog, M.Catalog_Closure, Observation_Deadline);
+      Expect (Update_Status = S and then Update_Current = Current, "update planning shares accepted generation failure checks");
       if S = OK then
          Expect (NC.Fingerprint (Observed_Catalog) = Current.Catalog and then NC.Package_Count (Observed_Catalog) = 1
             and then NC.Matches_Payload (Observed_Catalog, Observed_Payload), "native data belongs to this accepted descriptor");
@@ -312,7 +358,9 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
             & Counter'Image (Current.Generation) & " " & MC_Hex.Encode (Current.Catalog)
             & " " & MC_Hex.Encode (PX.Fingerprint (Observed_Payload))
             & Natural'Image (NC.Package_Count (Observed_Catalog)) & Natural'Image (PX.Claim_Count (Observed_Payload)));
-      else Native_Hidden; end if;
+         Expect (DT.Before_Hash (Update_Plan) = Current.Catalog and then DT.After_Hash (Update_Plan) = Catalog,
+            "observed transition starts at this accepted catalog"); Print_Update (M.Catalog_Closure);
+      else Native_Hidden; Update_Hidden; end if;
    end Read_Current;
    procedure Save_Plan is
    begin FP.Encode (P.all, B.all, Used, S); Need ("encode publication plan");
@@ -424,13 +472,13 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
          Plan_Hash := Original; P.all := Batch.all;
       end loop;
    end Check_Plan_Restrictions;
-   procedure Build_Native_Catalog (N : Positive) is
+   procedure Build_Native_Catalog (N : Positive; File_Name : String := "") is
       Value : NC.Catalog; Payload : PX.Index; Inventory : Pkg_Deb_Payload.Inventory;
       Media : MC_FS.Root; File : MC_FS.File; Selected : NC.Selection (1 .. 1);
       type Metadata_Access is access Pkg_Deb_Metadata.Observation;
       Metadata : Metadata_Access := new Pkg_Deb_Metadata.Observation;
       procedure Free is new Ada.Unchecked_Deallocation (Pkg_Deb_Metadata.Observation, Metadata_Access);
-      Name : constant String := (if N = 1 then "empty.deb" else "consumer-upgrade.deb");
+      Name : constant String := (if File_Name /= "" then File_Name elsif N = 1 then "empty.deb" else "consumer-upgrade.deb");
    begin
       MC_FS.Open_Root (Ada.Directories.Full_Name (Fixture_Path), Media, S); Need ("native fixture media");
       MC_FS.Open_Read (Media, Name, File, S); Need ("native fixture original");
@@ -447,6 +495,85 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       MC_FS.Close (Media);
    exception when others => Free (Metadata); MC_FS.Close (File); MC_FS.Close (Media); raise;
    end Build_Native_Catalog;
+   procedure Check_Update_Failures is
+      Expected : constant Digest := MC_SHA256.Hash (GD.Encode (Before));
+      Target : constant Digest := Catalog; Original : constant Digest := Catalog_Original;
+      Closure : constant Digest := M.Catalog_Closure;
+      Saved_Binding, Invalid_Catalog, Invalid_Closure : Digest;
+      CAS, State_Root : MC_FS.Root; Lock : MC_FS.File;
+      Snapshot, Latest : Pkg_Root_State.Frame; Wire : Bytes (1 .. 4096); N, Count : Natural;
+      Info : MC_FS.Entry_Info;
+      procedure Seed is
+      begin
+         Read_Update (Expected, Target, Closure, Observation_Deadline);
+         Expect (Update_Status = OK and then Update_Current = Before and then DT.Count (Update_Plan) = 2,
+            "seed complete preview against the first accepted generation");
+      end Seed;
+      function Object_Path (Hash : Digest) return String is
+         Hex : constant String := MC_Hex.Encode (Hash);
+      begin return "objects/" & Hex (1 .. 2) & "/" & Hex (3 .. 64); end Object_Path;
+   begin
+      MC_FS.Open_Root (State_Path, State_Root, S, Private_Only => True); Need ("update preview state");
+      MC_Atomic.Read (State_Root, "root.state", Snapshot, N, S); Need ("state before update previews");
+      Seed; Saved_Binding := Update_Binding;
+      Read_Update (Mark, Target, Closure, Observation_Deadline);
+      Expect (Update_Status = Stale, "preview requires the exact predecessor descriptor"); Update_Hidden;
+      Seed; Read_Update (Expected, Target, First_Closure, Observation_Deadline);
+      Expect (Update_Status /= OK, "a retained closure of another catalog cannot authorize this candidate"); Update_Hidden;
+      Seed; Read_Update (Expected, Zero_Digest, Closure, Observation_Deadline);
+      Expect (Update_Status = Invalid_Input, "empty update target cannot become an empty installed set"); Update_Hidden;
+      Seed; Read_Update (Expected, Target, Closure, 0);
+      Expect (Update_Status = Stale, "expired update preview"); Update_Hidden;
+      Seed; Read_Update (Expected, Target, Closure, Counter'Last);
+      Expect (Update_Status = Invalid_Input, "unbounded update preview"); Update_Hidden;
+      Seed;
+      Publisher.Read_Current_Transition (Root_Path, State_Path, Store_Path, Boot, Expected, Target, Closure,
+         "amd64", Enabled, Observation_Deadline, Update_Current, Update_Plan, Update_Binding, Update_Issue, Update_Status);
+      Expect (Update_Status = Denied, "update preview cannot cross root identities"); Update_Hidden;
+      for I in 1 .. 3 loop
+         Seed;
+         if I = 3 then MC_Store.Open (Store_Path, Store, S);
+         else MC_FS.Open_Locked (State_Root, (if I = 1 then "publication.lock" else "root.lock"), Lock, S, Create_If_Missing => False);
+         end if;
+         Need ("hold update preview reservation"); Read_Update (Expected, Target, Closure, Observation_Deadline);
+         Expect (Update_Status /= OK, "update preview requires every reservation"); Update_Hidden;
+         MC_FS.Close (Lock); MC_Store.Close (Store);
+      end loop;
+      MC_Store.Open (Store_Path, Store, S); Need ("preview candidate closure CAS");
+      MC_Store.Read_Object (Store, Closure, Wire, N, S); Need ("preview candidate retained objects");
+      Count := Natural (MC_Codec.U64 (Wire, 73)); Expect (N = 80 + 32 * Count, "preview closure fixture size");
+      MC_Store.Close (Store); MC_FS.Open_Root (Store_Path, CAS, S, Private_Only => True); Need ("preview fault CAS");
+      for I in 0 .. Count loop
+         declare Hash : constant Digest := (if I = 0 then Closure else Wire (81 + 32 * (I - 1) .. 112 + 32 * (I - 1))); begin
+            Seed; MC_FS.Rename (CAS, Object_Path (Hash), "held-update-member", True, S); Need ("hide candidate retained object");
+            Read_Update (Expected, Target, Closure, Observation_Deadline);
+            Ada.Text_IO.Put_Line ("UPDATE_MISSING " & MC_Hex.Encode (Hash) & " " & Outcome'Image (Update_Status));
+            Expect (Update_Status /= OK and then Update_Status /= Conflict, "missing candidate data cannot use cached planning evidence"); Update_Hidden;
+            MC_FS.Stat (CAS, Object_Path (Hash), Info, S); Need ("observe missing candidate object");
+            Expect (Info.Kind = MC_FS.Absent, "update planning does not regenerate retained candidate objects");
+            MC_FS.Rename (CAS, "held-update-member", Object_Path (Hash), True, S); Need ("restore candidate object");
+         end;
+      end loop;
+      MC_Store.Open (Store_Path, Store, S); Need ("invalid endpoint candidate CAS");
+      Build_Native_Catalog (2, "consumer.deb"); Invalid_Catalog := Catalog;
+      Pkg_Catalog_Retention.Prepare (Store, Catalog, Observation_Deadline, Invalid_Closure, S); Need ("retained invalid endpoint fixture");
+      MC_Store.Close (Store); Catalog := Target; Catalog_Original := Original;
+      Seed; Read_Update (Expected, Invalid_Catalog, Invalid_Closure, Observation_Deadline);
+      Expect (Update_Status = Conflict and then Update_Issue.Kind = DT.Endpoint_Rejected,
+         "retained candidate still requires valid native dependencies"); Update_Hidden;
+      Seed; MC_Text.Set (Enabled (1), "arm64", S); Need ("alternate architecture policy fixture");
+      Read_Update (Expected, Target, Closure, Observation_Deadline);
+      Expect (Update_Status = Invalid_Input, "native architecture must be explicitly enabled"); Update_Hidden;
+      Publisher.Read_Current_Transition (Root_Path, State_Path, Store_Path, Root_ID, Expected, Target, Closure,
+         "arm64", Enabled, Observation_Deadline, Update_Current, Update_Plan, Update_Binding, Update_Issue, Update_Status);
+      Expect (Update_Status = OK and then Update_Binding /= Saved_Binding, "preview binding includes the complete architecture policy");
+      MC_Text.Set (Enabled (1), "amd64", S); Need ("restore explicit architecture policy"); Seed;
+      Expect (Update_Binding = Saved_Binding, "identical inputs reproduce the same update binding");
+      MC_Atomic.Read (State_Root, "root.state", Latest, N, S); Need ("state after update previews");
+      Expect (N = Latest'Length and then Latest = Snapshot, "preview checks never publish an installed-state change");
+      MC_FS.Close (CAS); MC_FS.Close (State_Root);
+   exception when others => MC_Store.Close (Store); MC_FS.Close (Lock); MC_FS.Close (CAS); MC_FS.Close (State_Root); raise;
+   end Check_Update_Failures;
    procedure Build (N : Positive) is
       Wire : Bytes (1 .. GM.Max_Bytes); N_Bytes : Natural;
       type UB_Access is access Bytes;
@@ -530,6 +657,7 @@ begin
    Expect (Ada.Command_Line.Argument_Count in 4 | 5, "four disposable private directories and optional native fixture media");
    MC_Runtime.Initialize (S); Need ("runtime");
    MC_Clock.Boottime_Milliseconds (Observation_Deadline, S); Need ("observation clock"); Observation_Deadline := Observation_Deadline + 600_000;
+   MC_Text.Set (Enabled (1), "amd64", S); Need ("explicit native update architecture policy");
    declare Seed1 : constant Digest := (others => 1); Seed2 : constant Digest := (others => 2); begin
       Expect (Keypair (PK1'Address, SK1'Address, Seed1'Address) = 0, "test validator key");
       Expect (Keypair (PK2'Address, SK2'Address, Seed2'Address) = 0, "test reviewer key");
@@ -592,8 +720,13 @@ begin
    Publisher.Read_Current (Root_Path, State_Path, Store_Path, Boot, Current, S);
    Expect (S = Denied and then Current = GD.Empty, "readback is bound to publication root identity");
    Expect (Probed and then Config_Calls > 0 and then Native_Calls > 0 and then Recheck_Calls > 0, "full managed gates were reached under reservations");
-   First_Plan := Plan_Hash; First_Tx := P.Transaction_ID; Before := After;
-   Build (2); Complete_Stage;
+   First_Plan := Plan_Hash; First_Tx := P.Transaction_ID; First_Closure := M.Catalog_Closure; Before := After;
+   Build (2);
+   Read_Update (MC_SHA256.Hash (GD.Encode (Before)), Catalog, M.Catalog_Closure, Observation_Deadline);
+   Expect (Update_Status = OK and then DT.Count (Update_Plan) = 2, "preview complete update before candidate assembly");
+   Print_Update (M.Catalog_Closure);
+   Check_Update_Failures;
+   Complete_Stage;
    Check_Missing_Retention (2); Check_Missing_Retention (3); Check_Deadlines;
    Check_Plan_Restrictions;
    Other := After; Other.Previous := Mark;
@@ -613,6 +746,9 @@ begin
    Read_Current; Expect (S = Indeterminate and then Current = GD.Empty, "candidate never overrides active transaction state");
    Inject := None; Publish; Need ("resume second publication");
    Read_Current; Need ("read second publication"); Expect (Current = After, "second root/catalog pair exact");
+   Read_Update (MC_SHA256.Hash (GD.Encode (After)), Before.Catalog, First_Closure, Observation_Deadline);
+   Expect (Update_Status = OK and then DT.Count (Update_Plan) = 2, "reverse transition is a new observation of the current generation");
+   Print_Update (First_Closure);
    Commit_Window (False, False); Commit_Window (True, False); Commit_Window (True, True);
    Ada.Directories.Rename (Root_Path & "/generation.next", State_Path & "/retained-candidate");
    MC_Atomic.Write (Root, "generation.next", GD.Encode (Before), True, S); Need ("replace candidate with stale fixture descriptor");

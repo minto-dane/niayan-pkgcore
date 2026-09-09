@@ -14,9 +14,13 @@ from pathlib import Path
 import struct
 from compare_catalog_store import reference
 from compare_catalog_retention import objects
+from compare_selected_catalog import original as read_original
 
 def sha(data): return hashlib.sha256(data).digest()
 def u64(data, pos): return struct.unpack_from('>Q', data, pos)[0]
+def number(value): return struct.pack('>Q', value)
+def field(value):
+    raw = value.encode('utf-8'); return number(len(raw)) + raw
 def cas_read(cas, digest):
     text = digest.hex(); path = cas/'objects'/text[:2]/text[2:]
     assert path.stat().st_size <= 1024 * 1024
@@ -43,7 +47,7 @@ def check(root, state, cas, bank, media, native):
     before, after = descriptor(cas,before_hash), descriptor(cas,after_hash)
     assert after['previous'] == before_hash and before['previous'] == bytes(32)
     assert after['catalog'] == raw[112:144] == plan[72:104]
-    expected = {}; closures = {}; missing = Counter()
+    expected = {}; closures = {}; missing = Counter(); sources = {}; retained_hashes = {}
     for d, name, generation in [(before,'empty.deb',1),(after,'consumer-upgrade.deb',2)]:
         assert d['root'] == root_id and d['generation'] == generation
         manifest = cas_read(cas,d['manifest'])
@@ -58,6 +62,10 @@ def check(root, state, cas, bank, media, native):
         assert (cas/'pins'/manifest[24:40].hex()).read_bytes() == d['manifest']
         for digest, data in retained.items(): assert cas_read(cas,digest) == data
         closures[generation] = dict(hash=sha(closure).hex(), objects=len(retained))
+        package, relationships, atoms = read_original(media/name)
+        assert not atoms and all(int(row[2]) == 0 for row in relationships)
+        sources[d['catalog'].hex()] = package
+        retained_hashes[generation] = [sha(closure).hex(), *[h.hex() for h in retained]]
         for phase in range(5 if generation == 2 else 4):
             missing.update((str(phase), digest.hex()) for digest in [sha(closure), *retained])
         batch = cas_read(cas,manifest[160:192])
@@ -78,8 +86,48 @@ def check(root, state, cas, bank, media, native):
     assert [int(row[1]) for row in rows] == sorted(int(row[1]) for row in rows)
     assert all(row == expected[int(row[1])] for row in rows)
     assert rows[-1][0] == after_hash.hex()
+    updates = [line.split()[1:] for line in lines if line.startswith('CURRENT_UPDATE ')]
+    changes = Counter(tuple(line.split()[1:]) for line in lines if line.startswith('CURRENT_UPDATE_CHANGE '))
+    expected_changes = Counter(); bindings = {}; pairs = set()
+    descriptors = {d['hash'].hex(): d for d in [before, after]}
+    policy = sha(field('NIADARCH1') + field('amd64') + number(1) + field('amd64'))
+    for row in updates:
+        assert len(row) == 8
+        current, old_catalog, new_catalog, retained, endpoint, delta, binding, count = row
+        assert current in descriptors and descriptors[current]['catalog'].hex() == old_catalog
+        target = next(d for d in [before, after] if d['catalog'].hex() == new_catalog)
+        assert retained == closures[target['generation']]['hash']
+        old, new = sources[old_catalog], sources[new_catalog]
+        old_set = {(old[3], old[5]): old}; new_set = {(new[3], new[5]): new}
+        records = []
+        for key in sorted(old_set.keys() | new_set.keys()):
+            a, b = old_set.get(key), new_set.get(key)
+            if a and b:
+                assert a == b, 'fixture identity versions unexpectedly changed'
+                continue
+            kind = 0 if b else 1
+            records.append((kind, *key, a[4] if a else '', b[4] if b else '',
+                            a[0] if a else '00'*32, b[0] if b else '00'*32))
+        calculated_endpoint = sha(field('NIADFINAL1') + bytes.fromhex(new_catalog) + policy)
+        encoded = field('NIADTRANS1') + bytes.fromhex(old_catalog + new_catalog) + calculated_endpoint + number(len(records))
+        for i, record in enumerate(records, 1):
+            kind, name, architecture, old_version, new_version, old_original, new_original = record
+            encoded += number(kind) + field(name) + field(architecture) + field(old_version) + field(new_version) + bytes.fromhex(old_original + new_original)
+            expected_changes[(binding, str(i), ['ADDED', 'REMOVED'][kind], name, architecture,
+                              old_version or '-', new_version or '-', old_original, new_original)] += 1
+        calculated_delta = sha(encoded)
+        calculated_binding = sha(b'NIAUPD01' + bytes.fromhex(current + new_catalog + retained) + calculated_delta)
+        assert (endpoint, delta, binding, count) == (calculated_endpoint.hex(), calculated_delta.hex(), calculated_binding.hex(), str(len(records)))
+        pairs.add((current, new_catalog))
+        bindings[binding] = dict(current=current, target=new_catalog, retention=retained, endpoint=endpoint, transition=delta, changes=len(records))
+    assert changes == expected_changes
+    assert pairs == {(d['hash'].hex(), t['catalog'].hex()) for d in [before, after] for t in [before, after]}
+    update_missing = [line.split()[1:] for line in lines if line.startswith('UPDATE_MISSING ')]
+    assert all(len(row) == 2 and row[1] not in {'OK', 'CONFLICT'} for row in update_missing)
+    assert Counter(row[0] for row in update_missing) == Counter(retained_hashes[2])
     return dict(result='pass-for-two-published-native-catalog-observations',root=root_id.hex(),accepted_plan=raw[80:112].hex(),
                 observations=len(rows),missing_retention_checks=len(faults),generations=[dict(generation=g,descriptor=v[0],catalog=v[2],payload=v[3],claims=int(v[5]),retention=closures[g]) for g,v in expected.items()],
+                update_observations=len(updates),update_bindings=bindings,missing_update_objects=len(update_missing),
                 physical_deb_payload_applied=False,production_authorization=False)
 
 if __name__ == '__main__':

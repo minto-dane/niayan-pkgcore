@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT
 with Ada.Unchecked_Deallocation; with Interfaces.C;
 with MC_Atomic; with MC_Clock; with MC_Dirents; with MC_FS; with MC_Posix; with MC_SHA256; with MC_Store;
-with Pkg_Catalog_Store; with Pkg_File_Engine; with Pkg_File_Plan; with Pkg_File_Replay;
+with Pkg_Catalog_Store; with Pkg_Catalog_Retention; with Pkg_File_Engine; with Pkg_File_Plan; with Pkg_File_Replay;
 with Pkg_Generation_Manifest; with Pkg_Generation_Stage; with Pkg_Recovery_Audit; with Pkg_Root_State;
 package body Pkg_Generation_Publisher with SPARK_Mode => Off is
    package GD renames Pkg_Generation_Descriptor;
@@ -146,6 +146,56 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       Close_Observation (C);
    exception when others => Close_Observation (C); Clear_Result; Status := Indeterminate;
    end Read_Current_Catalog;
+   procedure Read_Current_Transition
+     (Root_Path, State_Path, Store_Path : String; Root_ID : Identity;
+      Expected_Current, Target_Catalog, Target_Closure : Digest;
+      Native_Architecture : String; Enabled : Pkg_Deb_Final_Set.Architecture_List;
+      Deadline : Counter; Current : out GD.Descriptor;
+      Result : in out Pkg_Deb_Transition.Plan; Binding : out Digest;
+      Issue : out Pkg_Deb_Transition.Finding; Status : out Outcome) is
+      C : Observation_Context; Latest : Pkg_Root_State.State;
+      Before, After : Pkg_Selected_Catalog.Catalog; Payload : Pkg_Payload_Index.Index;
+      Wire : Bytes (1 .. 136) := (others => 0);
+      use type Pkg_Deb_Transition.Failure_Kind;
+      procedure Clear_Result is
+      begin
+         Current := GD.Empty; Pkg_Deb_Transition.Clear (Result); Binding := Zero_Digest;
+         if Issue.Kind = Pkg_Deb_Transition.None then Issue := (others => <>); end if;
+      end Clear_Result;
+      procedure Check_Time is
+         Now : Counter;
+      begin
+         Status := Invalid_Input; if Deadline = Counter'Last then return; end if;
+         MC_Clock.Boottime_Milliseconds (Now, Status);
+         if Status = OK and then Now >= Deadline then Status := Stale; end if;
+      end Check_Time;
+   begin
+      Issue := (others => <>); Clear_Result; Status := Denied;
+      if MC_Posix.Euid = 0 then return; end if;
+      Check_Time; if Status /= OK then return; end if;
+      if Expected_Current = Zero_Digest or else Target_Catalog = Zero_Digest or else Target_Closure = Zero_Digest
+      then Status := Invalid_Input; return; end if;
+      Observe_And_Lock (Root_Path, State_Path, Store_Path, Root_ID, C, Status);
+      if Status = OK and then MC_SHA256.Hash (GD.Encode (C.Bound)) /= Expected_Current then Status := Stale; end if;
+      if Status = OK then GM.Check_Retention (C.Store, C.Image, Deadline, Status); end if;
+      if Status = OK then Pkg_Catalog_Retention.Verify (C.Store, Target_Catalog, Target_Closure, Deadline, Status); end if;
+      if Status = OK then Pkg_Catalog_Store.Load (C.Store, C.Bound.Catalog, Deadline, Before, Payload, Status); end if;
+      if Status = OK then Pkg_Catalog_Store.Load (C.Store, Target_Catalog, Deadline, After, Payload, Status); end if;
+      if Status = OK then
+         Pkg_Deb_Transition.Build (Before, After, Native_Architecture, Enabled, Deadline, Result, Issue, Status);
+      end if;
+      if Status = OK then Read_State (C.Root, C.State, Root_ID, Latest, Status); end if;
+      if Status = OK and then Latest /= C.Accepted then Status := Stale; end if;
+      if Status = OK then Check_Time; end if;
+      if Status = OK then
+         Wire (1 .. 8) := (78, 73, 65, 85, 80, 68, 48, 49);
+         Wire (9 .. 40) := Expected_Current; Wire (41 .. 72) := Target_Catalog;
+         Wire (73 .. 104) := Target_Closure; Wire (105 .. 136) := Pkg_Deb_Transition.Fingerprint (Result);
+         Binding := MC_SHA256.Hash (Wire); Current := C.Bound;
+      else Clear_Result; end if;
+      Close_Observation (C);
+   exception when others => Close_Observation (C); Issue := (others => <>); Clear_Result; Status := Indeterminate;
+   end Read_Current_Transition;
    procedure Publish (Root_Path, State_Path, Store_Path, Generation_Bank : String;
       Expected_Plan, Health_Receipt : Digest; Deadline : Counter; Status : out Outcome) is
       Root, State : MC_FS.Root; Lock, Root_Lock : MC_FS.File; Store : MC_Store.Store;
