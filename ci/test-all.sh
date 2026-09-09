@@ -69,3 +69,7 @@ mkdir -p "$D/run_deb_control_tests"
 mkdir -p "$D/"run_deb_control_tests/store
 echo 'Running run_deb_control_tests'
 timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_deb_control_tests" "$D/"run_deb_control_tests/store "$PWD/"tests/fixtures/deb-control
+mkdir -p "$D/run_deb_metadata_tests"
+mkdir -p "$D/"run_deb_metadata_tests/store
+echo 'Running run_deb_metadata_tests'
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_deb_metadata_tests" "$D/"run_deb_metadata_tests/store "$PWD/"tests/fixtures/deb-control

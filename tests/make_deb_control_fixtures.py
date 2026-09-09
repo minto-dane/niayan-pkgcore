@@ -12,7 +12,7 @@ from pathlib import Path
 import tarfile
 
 DEST = Path(__file__).resolve().parent / 'fixtures/deb-control'
-CONTROL = b'Package: fixture\nVersion: 1:2.0-1\nArchitecture: all\nDescription: fixture only\n continuation\nX-Preserved: opaque\n'
+CONTROL = b'Package: fixture\nVersion: 1:2.0-1\nArchitecture: all\nMaintainer: Fixture <fixture@example.invalid>\nDescription: fixture only\n continuation\nX-Preserved: opaque\n'
 SCRIPT = b'#!/bin/sh\nexit 97\n'
 
 def tar(entries, *, fmt=tarfile.USTAR_FORMAT, pax=None):

@@ -14,7 +14,7 @@ procedure Run_Deb_Control_Tests with SPARK_Mode => Off is
    Object : Digest; Envelope : DC.Envelope; Result, Saved : CT.Inventory;
    Now, Deadline : Counter; Buffer : Bytes (1 .. 4096); Used : Natural;
    Control_Text : constant String := "Package: fixture" & ASCII.LF & "Version: 1:2.0-1" & ASCII.LF
-      & "Architecture: all" & ASCII.LF & "Description: fixture only" & ASCII.LF & " continuation" & ASCII.LF
+      & "Architecture: all" & ASCII.LF & "Maintainer: Fixture <fixture@example.invalid>" & ASCII.LF & "Description: fixture only" & ASCII.LF & " continuation" & ASCII.LF
       & "X-Preserved: opaque" & ASCII.LF;
    procedure Need (Label_Text : String) is
    begin Expect (Status = OK, Label_Text & Outcome'Image (Status)); end Need;
