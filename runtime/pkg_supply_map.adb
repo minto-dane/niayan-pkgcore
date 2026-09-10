@@ -1,11 +1,12 @@
 -- SPDX-License-Identifier: MIT
-with Ada.Unchecked_Deallocation; with Interfaces.C;
+with Ada.Containers.Ordered_Sets; with Ada.Unchecked_Deallocation; with Interfaces.C;
 with MC_Clock; with MC_Codec; with MC_FS; with MC_Posix; with MC_SHA256;
 with Pkg_Catalog_Retention; with Pkg_Catalog_Store; with Pkg_Payload_Index;
 package body Pkg_Supply_Map with SPARK_Mode => Off is
    package C renames Pkg_Selected_Catalog;
    package GD renames Pkg_Generation_Descriptor;
    package Supply renames Pkg_Archive_Supply;
+   package Objects is new Ada.Containers.Ordered_Sets (Digest);
    use type Interfaces.C.unsigned; use type GD.Descriptor; use type Wide;
    Magic : constant Bytes := (78, 73, 65, 83, 77, 65, 80, 49);
    Receipt_Magic : constant Bytes := (78, 73, 65, 83, 85, 80, 48, 49);
@@ -78,9 +79,9 @@ package body Pkg_Supply_Map with SPARK_Mode => Off is
          Tick (Deadline, Status);
       end if;
    end Read;
-   procedure Receipt_References (Store : MC_Store.Store; Item : Source; Deadline : Counter;
+   procedure Read_Receipt (Store : MC_Store.Store; Item : Source; Deadline : Counter;
       Wire : out Bytes; Status : out Outcome) is
-      File : MC_FS.File; Used : Natural;
+      Used : Natural;
    begin
       Wire := (others => 0); Tick (Deadline, Status); if Status /= OK then return; end if;
       MC_Store.Read_Object (Store, Item.Receipt, Wire, Used, Status); if Status /= OK then return; end if;
@@ -94,18 +95,39 @@ package body Pkg_Supply_Map with SPARK_Mode => Off is
       if MC_Codec.U64 (Wire, 249) <= MC_Codec.U64 (Wire, 241)
         or else MC_Codec.U64 (Wire, 249) - MC_Codec.U64 (Wire, 241) > Wide (Supply.Max_Lifetime) then return; end if;
       for I in 0 .. 5 loop
-         Tick (Deadline, Status); if Status /= OK then return; end if;
-         if Wire (41 + 32 * I .. 72 + 32 * I) = Zero_Digest then Status := Corrupt; return; end if;
-         MC_Store.Open_Object (Store, Wire (41 + 32 * I .. 72 + 32 * I), File, Status);
-         MC_FS.Close (File); if Status /= OK then return; end if;
+         if Wire (41 + 32 * I .. 72 + 32 * I) = Zero_Digest then return; end if;
       end loop;
       Tick (Deadline, Status);
-   exception when others => MC_FS.Close (File); Status := Indeterminate;
-   end Receipt_References;
+   end Read_Receipt;
+   procedure Include_References (Wire : Bytes; Members : in out Objects.Set;
+      Deadline : Counter; Status : out Outcome) is
+      Object : Digest;
+   begin
+      for I in 0 .. 5 loop
+         Tick (Deadline, Status); if Status /= OK then return; end if;
+         Object := Wire (41 + 32 * I .. 72 + 32 * I);
+         if Object = Zero_Digest then Status := Corrupt; return; end if;
+         if not Members.Contains (Object) then
+            if Natural (Members.Length) >= 6 * Max_Entries then Status := Exhausted; return; end if;
+            Members.Insert (Object);
+         end if;
+      end loop;
+   end Include_References;
+   procedure Check_References (Store : MC_Store.Store; Members : Objects.Set;
+      Deadline : Counter; Status : out Outcome) is
+   begin
+      -- A local union of required bytes, never a cache of successful checks.
+      -- Rehash every member under this call's store reservation, before any
+      -- native reconstruction can recreate a missing retained input.
+      for Object of Members loop
+         Present (Store, Object, Deadline, Status); if Status /= OK then return; end if;
+      end loop;
+      Tick (Deadline, Status);
+   end Check_References;
    procedure Evaluate (Store : in out MC_Store.Store; Target : Context; Items : Sources;
       Trusted : Authorities; Observed_At, Now, Deadline : Counter; Historical : Boolean;
       Valid_Until : out Counter; Status : out Outcome) is
-      Old, After : C.Catalog; Payload : Pkg_Payload_Index.Index;
+      Old, After : C.Catalog; Payload : Pkg_Payload_Index.Index; Members : Objects.Set;
       Previous, Bound : Digest := Zero_Digest; Old_Item, Item : C.Package_Record;
       Wire : Bytes (1 .. Supply.Wire_Size); Started, Boot, Current, Elapsed, Until_Time : Counter := 0;
       Position : Natural := 0; Old_Position : Positive := 1; Which : Natural;
@@ -143,10 +165,13 @@ package body Pkg_Supply_Map with SPARK_Mode => Off is
          if Source_Item.Original <= Previous or else Source_Item.Control = Zero_Digest
            or else Source_Item.Receipt = Zero_Digest then Status := Corrupt; raise Interrupted; end if;
          Previous := Source_Item.Original;
-         Receipt_References (Store, Source_Item, Deadline, Wire, Status); Check;
+         Read_Receipt (Store, Source_Item, Deadline, Wire, Status); Check;
+         Include_References (Wire, Members, Deadline, Status); Check;
       end loop;
+      Check_References (Store, Members, Deadline, Status); Check;
+      Members.Clear;
       for Source_Item of Items loop
-         Clock; Receipt_References (Store, Source_Item, Deadline, Wire, Status); Check;
+         Clock; Read_Receipt (Store, Source_Item, Deadline, Wire, Status); Check;
          Which := 0;
          for I in Trusted'Range loop
             if Trusted (I).Scope = Wire (9 .. 40) then Which := I; exit; end if;
@@ -278,6 +303,7 @@ package body Pkg_Supply_Map with SPARK_Mode => Off is
    procedure Check_Retention (Store : MC_Store.Store; Address, Catalog, Closure : Digest;
       Deadline : Counter; Status : out Outcome) is
       Wire : Buffer_Access := null; Receipt : Bytes (1 .. Supply.Wire_Size); Count, Pos : Natural;
+      Members : Objects.Set;
    begin
       Status := Denied; if MC_Posix.Euid = 0 then return; end if;
       Read (Store, Address, Deadline, Wire, Count, Status);
@@ -293,12 +319,13 @@ package body Pkg_Supply_Map with SPARK_Mode => Off is
       if Status = OK then
          Pos := Header_Size;
          for I in 1 .. Count loop
-            Receipt_References (Store, (Wire (Pos + 1 .. Pos + 32), Wire (Pos + 33 .. Pos + 64),
+            Read_Receipt (Store, (Wire (Pos + 1 .. Pos + 32), Wire (Pos + 33 .. Pos + 64),
                Wire (Pos + 65 .. Pos + 96)), Deadline, Receipt, Status);
+            if Status = OK then Include_References (Receipt, Members, Deadline, Status); end if;
             exit when Status /= OK; Pos := Pos + Entry_Size;
          end loop;
       end if;
-      if Status = OK then Tick (Deadline, Status); end if;
+      if Status = OK then Check_References (Store, Members, Deadline, Status); end if;
       Free (Wire);
    exception
       when Storage_Error => Free (Wire); Status := Exhausted;

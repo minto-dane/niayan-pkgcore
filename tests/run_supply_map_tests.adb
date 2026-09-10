@@ -350,6 +350,32 @@ begin
    M.Verify (Store, Address, Target, No_Trust, Now + 1_200, Deadline, Until_Time, Status); Need ("expired old supply does not prevent removal-only observation");
    Expect (Until_Time = 0, "empty difference has no receipt expiry");
    Bad_Target := Target; Before (Bad_Target); Catalog (Rows); Prepare (Rows (1 .. 1));
+   -- One shared object may serve several roles and several originals. The
+   -- preflight is a union, but every new invocation must still check its bytes.
+   declare
+      Shared : M.Sources (1 .. 2); Swap : M.Source; Shared_Map : Digest;
+      Info : MC_FS.Entry_Info;
+   begin
+      Upstream := (others => Upstream (1));
+      Import ("empty.deb", Shared (1)); Import ("library-amd64.deb", Shared (2));
+      if Shared (1).Original > Shared (2).Original then
+         Swap := Shared (1); Shared (1) := Shared (2); Shared (2) := Swap;
+      end if;
+      Target := (Root_ID => (others => 104), others => <>); Catalog (Shared);
+      Prepare (Shared); Shared_Map := Address;
+      for Hash of Digest_Array'(Upstream (1), Shared (1).Control, Shared (2).Control,
+         Shared (1).Receipt, Shared (2).Receipt) loop
+         MC_FS.Rename (CAS, Object_Path (Hash), "held-shared", True, Status); Need ("remove shared preflight input");
+         M.Verify (Store, Shared_Map, Target, Trusted, Now, Deadline, Until_Time, Status);
+         Expect (Status /= OK and then Until_Time = 0, "earlier union check cannot mask later loss");
+         M.Check_Retention (Store, Shared_Map, Target.Catalog, Target.Closure, Deadline, Status);
+         Expect (Status /= OK, "retention rechecks shared references on every call");
+         MC_FS.Stat (CAS, Object_Path (Hash), Info, Status); Need ("inspect lost shared input");
+         Expect (Info.Kind = MC_FS.Absent, "all union members precede native reconstruction");
+         MC_FS.Rename (CAS, "held-shared", Object_Path (Hash), True, Status); Need ("explicitly restore shared input");
+         M.Verify (Store, Shared_Map, Target, Trusted, Now, Deadline, Until_Time, Status); Need ("recheck restored shared input");
+      end loop;
+   end;
    MC_FS.Close (CAS); MC_FS.Close (Media); MC_Store.Close (Store); Report;
 exception when others => Free (Observation); MC_FS.Close (File); MC_FS.Close (CAS); MC_FS.Close (Media); MC_Store.Close (Store); raise;
 end Run_Supply_Map_Tests;
