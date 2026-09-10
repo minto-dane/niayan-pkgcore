@@ -15,6 +15,9 @@ def fixtures():
     regular = [('./etc/fixture.conf', b'first\n', tarfile.REGTYPE, '')]
     cases = [
         ('normal', b'/etc/fixture.conf\n', regular, True),
+        ('updated', b'/etc/fixture.conf\n', [('./etc/fixture.conf', b'second\n', tarfile.REGTYPE, '')], True),
+        ('omitted', None, [], True),
+        ('remove-current', b'remove-on-upgrade /etc/fixture.conf\n', [], True),
         ('absent', None, regular, True),
         ('empty', b'', regular, True),
         ('missing', b'/etc/missing.conf\n', regular, True),
@@ -35,7 +38,7 @@ def fixtures():
     ]
     control = b'Package: conf-fixture\nVersion: 1\nArchitecture: all\nMaintainer: Fixture <fixture@example.invalid>\nDescription: conffile fixture\n'
     for name, declarations, files, accepted in cases:
-        metadata = [('./control', control, tarfile.REGTYPE, '')]
+        metadata = [('./control', control.replace(b'Version: 1', b'Version: 2') if name in ('updated', 'omitted', 'remove-current') else control, tarfile.REGTYPE, '')]
         if declarations is not None:
             metadata.append(('./conffiles', declarations, tarfile.REGTYPE, ''))
         raw = b'!<arch>\n'+member('debian-binary', b'2.0\n')+member('control.tar', tar(metadata))+member('data.tar', tar(files))

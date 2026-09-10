@@ -5,6 +5,21 @@
     "accepted": true
   },
   {
+    "filename": "updated.deb",
+    "sha256": "04a3d75ffb271fc69403b85590dffab53c733c35053c761ea5b84cb7be331685",
+    "accepted": true
+  },
+  {
+    "filename": "omitted.deb",
+    "sha256": "388c9b31a895a5c5dae7c1040dc943964bcc3eab034f540a8e50a6dc4fbb5262",
+    "accepted": true
+  },
+  {
+    "filename": "remove-current.deb",
+    "sha256": "c2951cd51fb0d7f0b95abcc3cfa022d27c0355aa593dc101982d6a442cf126d1",
+    "accepted": true
+  },
+  {
     "filename": "absent.deb",
     "sha256": "4c54a8bc6a18757829a12c463c91eabed3ecc0c4498932210cf4a13671cce2dd",
     "accepted": true
