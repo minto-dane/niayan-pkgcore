@@ -4,8 +4,8 @@
   "resilience_contract_version": "1.0",
   "assured_operations_version": "1.0",
   "coordination_integrity_version": "1.0",
-  "bundle_sha256": "6736ad9c4511b23904687ac8ed0bd4a55d3a97cc2d626499857906b1d3ba48fb",
-  "runtime_source_profile": "d645bb10ef25fa57522106f154d5eeddad97e31f31cdf5720fab1e698dc40a5b",
+  "bundle_sha256": "adb9efd571c8b57da5932794aba0d7b34ce3e099f2967a66e70cd93c6d553dcb",
+  "runtime_source_profile": "3f3ec126ebd023fee5e96aa8d32211744f4bb3716a79599af2bc98a6af7ce518",
   "bundle_hash_definition": "SHA-256 of UTF-8 contracts.source.sha256 sorted paths LF",
   "trust": "Source drift lock only: no release authentication or formal proof",
   "files": [
@@ -231,11 +231,11 @@
     },
     {
       "path": "runtime/mc_store.adb",
-      "sha256": "43777e230d1333ad8198b80ebe53a03243239a2b9ccf6417596af65fdf50cab2"
+      "sha256": "8c49960ddde5cd347d02aa9b605fdd9dae00c5bc0b7306284833835f6bdc65c0"
     },
     {
       "path": "runtime/mc_store.ads",
-      "sha256": "5552026c51edd7459d414a2858913935a128f0b40d189359b5cf3f4ef2122717"
+      "sha256": "1006a51500224c0e5d701e066b5479cc4f7ae1443ef9dd24d3d30540dc58de04"
     },
     {
       "path": "runtime/mc_tools.adb",
@@ -343,7 +343,7 @@
     },
     {
       "path": "src/mc_contract_profile.ads",
-      "sha256": "b17fc276c586f70d47d5b2101bad12706f4e5ee2d65b963c3730065906644834"
+      "sha256": "c0bfb61303ce11e10f7f6d91e9d6e590a2ab4afc32c99989e61ae551b3723c5e"
     },
     {
       "path": "src/mc_control.adb",

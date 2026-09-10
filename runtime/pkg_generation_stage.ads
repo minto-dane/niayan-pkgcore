@@ -22,6 +22,13 @@ package Pkg_Generation_Stage with SPARK_Mode => Off is
    procedure Advance
      (Root_Path, State_Path, Store_Path : String; Expected_Manifest : Digest;
       Completed_Batches : out Natural; Deadline : Counter; Status : out Outcome);
+   procedure Prepare_Root
+     (Root_Path, State_Path, Store_Path, Socket_Path : String;
+      Expected_Manifest, Expected_Worker : Digest; Deadline : Counter; Status : out Outcome);
+   -- v5 only. Hold stage/root/CAS reservations through the actual FD request and
+   -- final content/admission rechecks. prepare-root/root-prepared authorization
+   -- phases are mandatory; a service response alone never grants publication.
+   -- Failure after delivery is uncertain: no implicit retry or tree reuse.
    procedure Inspect
      (Root_Path, State_Path, Store_Path : String; Expected_Manifest : Digest; Deadline : Counter;
       Status : out Outcome);

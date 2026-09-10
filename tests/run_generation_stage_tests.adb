@@ -200,6 +200,10 @@ begin
       Stage.Verify_And_Hold (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2),
          Ada.Command_Line.Argument (3), Manifest_Digest, Hold, Deadline, S);
       Expect (S = Denied and then not Stage.Held (Hold), "root held inspection refused");
+      Stage.Prepare_Root (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2),
+         Ada.Command_Line.Argument (3), "/nonexistent-preparation.sock", Manifest_Digest,
+         Manifest_Digest, Deadline, S);
+      Expect (S = Denied, "root preparation adapter refused");
       Report; return;
    end if;
    Deny_All := True;

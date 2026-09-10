@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT
 with Ada.Unchecked_Deallocation; with Interfaces.C; with System;
-with MC_Clock;
+with MC_Clock; with MC_Codec; with Pkg_Root_Archive; with Pkg_Root_Preparation;
 with MC_Atomic; with MC_Dirents; with MC_FS; with MC_Hex; with MC_Log; with MC_Log_Format;
 with MC_Posix; with MC_SHA256; with MC_Store; with MC_Text;
 with Pkg_File_Engine; with Pkg_File_Plan; with Pkg_File_Replay;
@@ -306,6 +306,60 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       Done;
    exception when others => Close (C); Done; Status := Indeterminate;
    end Verify_And_Hold;
+   procedure Prepare_Root
+     (Root_Path, State_Path, Store_Path, Socket_Path : String;
+      Expected_Manifest, Expected_Worker : Digest; Deadline : Counter; Status : out Outcome) is
+      C : Verified_Generation; Store : MC_Store.Store; M, After : GM.Manifest;
+      Header : Bytes (1 .. Pkg_Root_Archive.Header_Size); Used : Natural;
+      Source, Root_Wire : MC_FS.File; Info : MC_FS.Entry_Info;
+      Archive : Digest := Zero_Digest; Size, Entries : Counter := 0;
+      Delivered : Boolean := False;
+      procedure Done is
+      begin
+         MC_FS.Close (Root_Wire); MC_FS.Close (Source); MC_Store.Close (Store); Close (C);
+      end Done;
+   begin
+      Status := Denied; if MC_Posix.Euid = 0 then return; end if;
+      Status := Invalid_Input; if Expected_Worker = Zero_Digest then return; end if;
+      Verify_And_Hold (Root_Path, State_Path, Store_Path, Expected_Manifest, C, Deadline, Status);
+      if Status = OK then Read_Binding (C.State, Expected_Manifest, M, Status); end if;
+      if Status = OK and then M.Format /= GM.Root_V5 then Status := Denied; end if;
+      -- The verified stage/root remain reserved while CAS is reacquired. All
+      -- retained inputs and admission are checked again under this reservation.
+      if Status = OK then MC_Store.Open (Store_Path, Store, Status); end if;
+      if Status = OK then MC_Store.Check_Pin (Store, M.Transaction_ID, Expected_Manifest, Status); end if;
+      if Status = OK then Check_Content (Store, M, Deadline, Status); end if;
+      if Status = OK then Gate (M, Expected_Manifest, "prepare-root", Deadline, Status); end if;
+      if Status = OK then MC_Store.Open_Object (Store, M.Root_Archive, Root_Wire, Status); end if;
+      if Status = OK then MC_FS.Read_At (Root_Wire, 0, Header, Used, Status); end if;
+      if Status = OK and then Used /= Header'Length then Status := Corrupt; end if;
+      if Status = OK then
+         -- Check_Content already verified the complete canonical NIAROOT1,
+         -- ownership and exact enclosing catalog/closure. Read the same object.
+         Archive := Header (105 .. 136);
+         Size := Counter (MC_Codec.U64 (Header, 137)); Entries := Counter (MC_Codec.U64 (Header, 145));
+         MC_Store.Open_Object (Store, Archive, Source, Status);
+      end if;
+      if Status = OK then MC_FS.Info (Source, Info, Status); end if;
+      if Status = OK and then (Info.Kind /= MC_FS.Regular or else Info.Size /= Size) then Status := Corrupt; end if;
+      if Status = OK then
+         Gate (M, Expected_Manifest, "prepare-root", Deadline, Status);
+         if Status = OK then
+            Delivered := True;
+            Pkg_Root_Preparation.Request (Socket_Path, Expected_Manifest, M.Root_Archive, Archive,
+               Expected_Worker, M.Stage_ID, Size, Entries, Deadline, MC_FS.Native (Source),
+               MC_Store.Native_Reservation (Store), Status);
+         end if;
+      end if;
+      if Status = OK then Read_Binding (C.State, Expected_Manifest, After, Status); end if;
+      if Status = OK then MC_Store.Check_Pin (Store, M.Transaction_ID, Expected_Manifest, Status); end if;
+      if Status = OK then Check_Content (Store, After, Deadline, Status); end if;
+      if Status = OK then Gate (After, Expected_Manifest, "root-prepared", Deadline, Status); end if;
+      -- Even a post-response denial can leave a fully extracted private tree.
+      if Delivered and then Status /= OK then Status := Indeterminate; end if;
+      Done;
+   exception when others => Done; Status := Indeterminate;
+   end Prepare_Root;
    procedure Inspect
      (Root_Path, State_Path, Store_Path : String; Expected_Manifest : Digest; Deadline : Counter;
       Status : out Outcome) is

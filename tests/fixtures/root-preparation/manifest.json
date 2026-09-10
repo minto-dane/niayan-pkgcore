@@ -1,0 +1,17 @@
+[
+  {
+    "filename": "base.deb",
+    "sha256": "5232f16949588621eb448b5279fb7980798b6e215da39e592465e7b7295bc63f",
+    "size": 20672
+  },
+  {
+    "filename": "overlay.deb",
+    "sha256": "b0ecd5748c3fad84146740449a32eddc4c4a5e5df6ceab7cce0016f80690a73f",
+    "size": 20672
+  },
+  {
+    "filename": "conflicting.deb",
+    "sha256": "ee46fc545ce0166e307a522cd019a79dc6382a750d8178a7030b7aab44fc0dfa",
+    "size": 20672
+  }
+]

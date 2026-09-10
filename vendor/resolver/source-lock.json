@@ -1,7 +1,7 @@
 {
   "format": 1,
-  "resolver_profile": "0874d6b70ee2a3dedbdee6ec229766d1ac6527f9682f33be66928c53a16b3cae",
-  "shared_profile": "d645bb10ef25fa57522106f154d5eeddad97e31f31cdf5720fab1e698dc40a5b",
+  "resolver_profile": "d2d99a622a9cafcd5b898a03143f63f3972d5f7613342d422421a70ef079a690",
+  "shared_profile": "3f3ec126ebd023fee5e96aa8d32211744f4bb3716a79599af2bc98a6af7ce518",
   "files": {
     "src/resolver_admission.adb": "5d8e2232834c55b16e2c8c41630fe277c863a3d2da88993613158d0d447d434a",
     "src/resolver_admission.ads": "ce087e69bfa3ed39142f87249362e83f9443dac3b0107e92fefa0ddab4a021ff",

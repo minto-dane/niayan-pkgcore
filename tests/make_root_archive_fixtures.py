@@ -12,7 +12,7 @@ from make_deb_payload_fixtures import entry, archive
 DEST = Path(__file__).resolve().parent / 'fixtures/root-archive'
 
 
-def fixtures():
+def fixtures(*, filesystem_profile=False):
     root = entry('./', kind=tarfile.DIRTYPE, mode=0o755)
     directory = entry('./dir', kind=tarfile.DIRTYPE, mode=0o2755)
     long = 'g' * 150
@@ -25,15 +25,15 @@ def fixtures():
              'ctime': '1700000002.42', 'LIBARCHIVE.creationtime': '1700000003.75',
              'SCHILY.fflags': 'nodump', 'SCHILY.xattr.user.demo': 'value',
              'SCHILY.acl.access': 'user::rw-,user:42:r--,group::r--,mask::r--,other::---'}),
-         entry('./sym', kind=tarfile.SYMTYPE, link='dir/file'),
+         entry('./sym', kind=tarfile.SYMTYPE, link='dir/file', mode=0o777 if filesystem_profile else 0o644),
          entry('./device', kind=tarfile.CHRTYPE, devmajor=1, devminor=3),
          entry('./block', kind=tarfile.BLKTYPE, devmajor=8, devminor=1),
          entry('./fifo', kind=tarfile.FIFOTYPE), entry('./日本語', b'utf8')]),
         ('overlay', tarfile.USTAR_FORMAT, [entry('./', kind=tarfile.DIRTYPE, mode=0o750),
          entry('./dir', kind=tarfile.DIRTYPE, mode=0o755), entry('./dir/file', b'other'), entry('./extra')]),
         ('conflicting', tarfile.GNU_FORMAT, [root, entry('./dir', b'not a directory'),
-         entry('./' + long, b'long', uid=4294967295, gid=4294967294, mtime=-1),
-         entry('./long-link', kind=tarfile.SYMTYPE, link=long)]),
+         entry('./' + long, b'long', uid=123 if filesystem_profile else 4294967295, gid=456 if filesystem_profile else 4294967294, mtime=-1),
+         entry('./long-link', kind=tarfile.SYMTYPE, link=long, mode=0o777 if filesystem_profile else 0o644)]),
     ]
     for name, fmt, entries in sources:
         extra = 'Replaces: root-overlay (<< 2), root-conflicting (= 1)\n' if name == 'base' else ''

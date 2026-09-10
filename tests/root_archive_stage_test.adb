@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT
 -- Artificial signatures and exact fixture authorization; never a site provider.
-with Ada.Directories; with Ada.Text_IO; with Ada.Unchecked_Deallocation; with Interfaces.C; with System;
+with Ada.Command_Line; with Ada.Directories; with Ada.Text_IO; with Ada.Unchecked_Deallocation; with Interfaces.C; with System;
 with MC_Codec; with MC_FS; with MC_Hex; with MC_Posix; with MC_SHA256; with MC_Text;
 with Pkg_Archive_Supply; with Pkg_Supply_Map; with Pkg_Supply_Policy;
 with Pkg_Deb_Final_Set; with Pkg_File_Plan; with Pkg_Generation_Descriptor;
@@ -32,7 +32,8 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
       Parent : constant String := Ada.Directories.Containing_Directory (Store_Path);
       Root_Path : constant String := Parent & "/archive-stage-root";
       State_Path : constant String := Parent & "/archive-stage-state";
-      Deny : Boolean := False;
+      Deny, Deny_Prepare, Deny_Post : Boolean := False;
+      Prepare_Calls, Post_Calls : Natural := 0;
       function Keypair (PK, SK, Seed : System.Address) return Interfaces.C.int
         with Import, Convention => C, External_Name => "crypto_sign_seed_keypair";
       function Sign (Signature, Length, Message : System.Address;
@@ -44,12 +45,25 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
          Epoch, Fence : Counter; Phase : String; Status : out Outcome) is
       begin
          Status := Denied;
+         if Phase in "stage:prepare-root" | "stage:root-prepared" then
+            declare Other : MC_Store.Store; Result : Outcome; begin
+               MC_Store.Open (Store_Path, Other, Result);
+               Expect (Result /= OK, "actual CAS reservation remains held during admission");
+               MC_Store.Close (Other);
+            end;
+         end if;
+         if Phase = "stage:prepare-root" then
+            Prepare_Calls := Prepare_Calls + 1; if Deny_Prepare then return; end if;
+         elsif Phase = "stage:root-prepared" then
+            Post_Calls := Post_Calls + 1; if Deny_Post then return; end if;
+         end if;
          if Deny or else Manifest /= Expected or else Stage_ID /= M.Stage_ID or else Epoch /= M.Epoch
            or else Fence /= M.Fence or else Phase'Length <= 6 or else Phase (Phase'First .. Phase'First + 5) /= "stage:" then return; end if;
          if Plan = Zero_Digest then
             if Transaction_ID = M.Transaction_ID and then Evidence = Zero_Digest
               and then Phase in "stage:provision" | "stage:provision-root" | "stage:advance" |
-                "stage:inspect" | "stage:inspect-batch" | "stage:inspected" then Status := OK; end if;
+                "stage:inspect" | "stage:inspect-batch" | "stage:inspected" |
+                "stage:prepare-root" | "stage:root-prepared" then Status := OK; end if;
          elsif Plan = M.Batches (1).Plan and then Transaction_ID = GM.Transaction (M, 1)
            and then Evidence in Zero_Digest | Receipt then Status := OK; end if;
       end Authorize;
@@ -142,6 +156,24 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
       Stage.Advance (Root_Path, State_Path, Store_Path, Expected, Count, Deadline, Status); Need ("materialize root archive stage");
       Expect (Count = 1, "one root archive batch");
       Stage.Inspect (Root_Path, State_Path, Store_Path, Expected, Deadline, Status); Need ("inspect exact root stage");
+      Deny_Prepare := True;
+      Stage.Prepare_Root (Root_Path, State_Path, Store_Path, "/nonexistent-preparation.sock",
+         Expected, Receipt, Deadline, Status);
+      Expect (Status = Denied and then Prepare_Calls = 1 and then Post_Calls = 0, "preparation requires its own live authorization");
+      Deny_Prepare := False;
+      if Ada.Command_Line.Argument_Count >= 4 then
+         declare
+            Worker : Digest;
+         begin
+            MC_Hex.Decode (Ada.Command_Line.Argument (4), Worker, Status); Need ("configured worker digest");
+            Deny_Post := Ada.Command_Line.Argument_Count = 5 and then Ada.Command_Line.Argument (5) = "deny-post";
+            Stage.Prepare_Root (Root_Path, State_Path, Store_Path, Ada.Command_Line.Argument (3),
+               Expected, Worker, Deadline, Status);
+            if Deny_Post then Expect (Status = Indeterminate, "post-extraction denial remains uncertain");
+            else Need ("actual service extraction through stage admission"); end if;
+            Expect (Prepare_Calls = 3 and then Post_Calls = 1, "pre and post admission ran under reservations");
+         end;
+      end if;
       MC_FS.Open_Root (Root_Path, Stage_Root, Status, Private_Only => True); Need ("observe staged root");
       MC_FS.Open_Read (Stage_Root, "tree/root.tar", File, Status); Need ("actual staged tar");
       MC_FS.Hash (File, MC_Store.Max_Object_Size, Ignored, Until_Time, Status); Need ("actual staged tar hash");

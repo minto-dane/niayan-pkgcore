@@ -2,6 +2,8 @@
 with MC_Hex; with MC_Dirents; with MC_SHA256; with MC_Posix; with Interfaces.C; with System;
 package body MC_Store with SPARK_Mode => Off is
    use type MC_FS.Entry_Kind; use type MC_Types.Word; use type MC_FS.Entry_Info; use type Interfaces.C.int;
+   function Native_Reservation (S : Store) return Integer is
+     (if S.Opened then MC_FS.Native (S.Lock) else -1);
    procedure Random_Bytes (P : System.Address; N : Interfaces.C.size_t)
      with Import, Convention => C, External_Name => "randombytes_buf";
    function Object_Path (D : Digest) return String is

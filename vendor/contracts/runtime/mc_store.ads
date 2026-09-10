@@ -24,6 +24,11 @@ package MC_Store with SPARK_Mode => Off is
    procedure Write_Chunk(W : in out Writer; Data : Bytes; Status : out Outcome);
    procedure Finish_Write(S : in out Store; W : in out Writer; Status : out Outcome);
    procedure Abort_Write(W : in out Writer);
+   function Native_Reservation (S : Store) return Integer;
+   -- Borrowed descriptor of the held writer reservation, or -1 when closed.
+   -- Internal FD transfer only: never close, unlock, mutate or retain it beyond
+   -- S's lifetime. SCM_RIGHTS shares its OFD; consumers must never LOCK_UN.
+   -- This conveys exclusion, not admission or permission to mutate the store.
    procedure Close (S : in out Store);
    -- Local content-addressed storage, not an authorization authority. Every read
    -- rehashes the descriptor before consumption. Pins are immutable, never GC'd.
