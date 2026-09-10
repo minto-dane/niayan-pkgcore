@@ -6,6 +6,7 @@ with MC_Types; use MC_Types;
 with Pkg_Archive_Observer; with Pkg_Archive_Supply;
 with Pkg_Catalog_Retention; with Pkg_Catalog_Store; with Pkg_Deb_Payload;
 with Pkg_Payload_Index; with Pkg_Selected_Catalog; with Pkg_Supply_Map; with Pkg_Supply_Policy;
+with MC_Text; with Pkg_Site_Supply; with Pkg_Supply_Planner;
 with Test_Support; use Test_Support;
 procedure Run_Archive_Observer_Tests with SPARK_Mode => Off is
    use type Word; use type Interfaces.C.unsigned;
@@ -77,6 +78,67 @@ procedure Run_Archive_Observer_Tests with SPARK_Mode => Off is
       Ada.Text_IO.Put_Line ("SUPPLY_MAP " & MC_Hex.Encode (Map));
       Ada.Text_IO.Put_Line ("SUPPLY_RETAINED_POLICY " & MC_Hex.Encode (Retained_Policy));
    end Bind_Plan;
+   procedure Plan_From_Site is
+      Site : Pkg_Site_Supply.Session;
+      Snapshot : Pkg_Supply_Policy.Snapshot;
+      Catalog : Pkg_Selected_Catalog.Catalog;
+      Payload : Pkg_Payload_Index.Index;
+      Inventory : Pkg_Deb_Payload.Inventory;
+      Selection : constant Pkg_Selected_Catalog.Selection := (1 => (Original, Control));
+      Target : Pkg_Supply_Map.Context;
+      Requests : Pkg_Supply_Planner.Requests (1 .. 1);
+      Tx : constant Identity := (others => 96);
+      Map, Retained : Digest := ID;
+      Until_Time : Counter := 1;
+   begin
+      Target.Root_ID := (others => 95);
+      Pkg_Deb_Payload.Stage (Store, Original, Deadline, Inventory, Status); Need ("planning payload");
+      Pkg_Payload_Index.Add (Payload, Inventory, Deadline, Status); Need ("planning index");
+      Pkg_Selected_Catalog.Add (Catalog, Store, Original, Deadline, Status); Need ("planning catalog");
+      Pkg_Payload_Index.Seal (Payload, Deadline, Status); Need ("planning seal payload");
+      Pkg_Selected_Catalog.Seal (Catalog, Selection, Payload, Deadline, Status); Need ("planning seal selection");
+      Pkg_Catalog_Store.Save (Store, Catalog, Deadline, Target.Catalog, Status); Need ("planning catalog retention");
+      Pkg_Catalog_Retention.Prepare (Store, Target.Catalog, Deadline, Target.Closure, Status); Need ("planning closure");
+      Requests (1) := (Request_ID => ID, Scope => Trusted.Scope, Original => Original, Control => Control,
+         InRelease => InRelease, Index => Index, Keyring => Keyring, others => <>);
+      MC_Text.Set (Requests (1).Index_Path, Ada.Command_Line.Argument (4), Status); Need ("planning index path");
+      MC_Text.Set (Requests (1).Deb_Path, Ada.Command_Line.Argument (5), Status); Need ("planning DEB path");
+      Pkg_Site_Supply.Open_Planning ("/etc/niaos/supply", "/var/lib/niaos/trust", Target.Root_ID, Tx, Deadline, Site, Status);
+      Need ("planning phase boundary");
+      Pkg_Site_Supply.Observe (Site, Target.Root_ID, Tx, Zero_Digest, Zero_Digest, Snapshot, Status);
+      Expect (Status /= OK and then Snapshot.Count = 0 and then Snapshot.Map = Zero_Digest, "planning cannot serve publication even with zero context");
+      Pkg_Site_Supply.Observe_Planning (Site, Target.Root_ID, Tx, Snapshot, Status);
+      Expect (Status /= OK and then Snapshot.Count = 0, "wrong phase closes planning");
+      Pkg_Site_Supply.Open_Planning ("/etc/niaos/supply", "/var/lib/niaos/trust", Target.Root_ID, Tx, Deadline, Site, Status);
+      Need ("new planning for invalid bind");
+      Pkg_Site_Supply.Bind_Publication (Site, Target.Root_ID, Tx, Zero_Digest, ID, ID, Status);
+      Expect (Status /= OK, "publication binding requires actual hashes");
+      Pkg_Site_Supply.Open_Planning ("/etc/niaos/supply", "/var/lib/niaos/trust", Target.Root_ID, Tx, Deadline, Site, Status);
+      Need ("protected planning session without fabricated plan");
+      Pkg_Site_Supply.Observe_Planning (Site, Target.Root_ID, Tx, Snapshot, Status); Need ("planning trust");
+      Expect (Snapshot.Map = Zero_Digest and then Snapshot.Count = 1, "planning carries no publication map");
+      Pkg_Supply_Planner.Prepare (Store, Site, Tx, Target, Requests, Observer_UID, Deadline, Map, Retained, Until_Time, Status);
+      if Ada.Command_Line.Argument (6) = "planning" then
+         Need ("real site observer supply planner");
+         Expect (Map /= Zero_Digest and then Retained /= Zero_Digest and then Until_Time > Snapshot.Observed_At, "fresh complete supply outputs");
+         Pkg_Site_Supply.Bind_Publication (Site, Target.Root_ID, Tx, ID, Retained, Map, Status); Need ("one-way publication binding");
+         Pkg_Site_Supply.Observe (Site, Target.Root_ID, Tx, ID, Retained, Snapshot, Status); Need ("bound publication provider");
+         Expect (Snapshot.Map = Map, "actual planned map bound");
+         Pkg_Supply_Policy.Verify_New (Store, Retained, Target, Snapshot.Trusted (1 .. Snapshot.Count), Snapshot.Observed_At,
+            Deadline, Until_Time, Status); Need ("current protected policy verifies retained plan");
+         Pkg_Site_Supply.Observe_Planning (Site, Target.Root_ID, Tx, Snapshot, Status);
+         Expect (Status /= OK and then Snapshot.Count = 0, "cannot reopen planning after publication binding");
+         Pkg_Site_Supply.Observe (Site, Target.Root_ID, Tx, ID, Retained, Snapshot, Status);
+         Expect (Status /= OK and then Snapshot.Map = Zero_Digest, "phase refusal poisons publication session");
+         Ada.Text_IO.Put_Line ("PLANNED_MAP " & MC_Hex.Encode (Map));
+      else
+         Expect (Status /= OK and then Map = Zero_Digest and then Retained = Zero_Digest and then Until_Time = 0, "trust change clears all planner outputs");
+         Pkg_Site_Supply.Observe_Planning (Site, Target.Root_ID, Tx, Snapshot, Status);
+         Expect (Status /= OK and then Snapshot.Map = Zero_Digest and then Snapshot.Count = 0, "planner refusal closes site session");
+      end if;
+      Pkg_Site_Supply.Close (Site);
+   exception when others => Pkg_Site_Supply.Close (Site); raise;
+   end Plan_From_Site;
 begin
    Expect (Ada.Command_Line.Argument_Count in 2 | 6, "private CAS and media; optional observer UID/index/DEB/mode");
    MC_Runtime.Initialize (Status); Need ("runtime");
@@ -108,6 +170,9 @@ begin
       Import ("scope", Other); MC_Store.Read_Object (Store, Other, Trusted.Scope, Used, Status); Need ("scope pin");
       Expect (Used = 32, "scope size");
       Import ("control", Control);
+      if Ada.Command_Line.Argument (6) in "planning" | "planning-denied" then
+         Plan_From_Site; Exclusion; MC_FS.Close (Media); MC_Store.Close (Store); Report; return;
+      end if;
       if Ada.Command_Line.Argument (6) = "wrong-control" then Control := Keyring; end if;
       Call (Deadline, Ada.Command_Line.Argument (4), Ada.Command_Line.Argument (5));
       if Ada.Command_Line.Argument (6) = "accepted" then

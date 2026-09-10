@@ -90,7 +90,7 @@ package body Pkg_Site_Supply with SPARK_Mode => Off is
    end Read_Protected;
    procedure Close (Context : in out Session) is
    begin Context.Data := (others => <>); end Close;
-   procedure Observe (Context : in out Session; Root_ID, Transaction_ID : Identity;
+   procedure Read_Current (Context : in out Session; Root_ID, Transaction_ID : Identity;
       Plan, Retained_Policy : Digest; Value : out Pkg_Supply_Policy.Snapshot; Status : out Outcome) is
       S : State renames Context.Data;
       Directory, Floors : MC_FS.Root; Policy_Info, Floor_Info, After : MC_FS.Entry_Info;
@@ -136,7 +136,52 @@ package body Pkg_Site_Supply with SPARK_Mode => Off is
    exception when others =>
       MC_FS.Close (Directory); MC_FS.Close (Floors); Close (Context);
       Value := (others => <>); Status := Indeterminate;
+   end Read_Current;
+   procedure Observe (Context : in out Session; Root_ID, Transaction_ID : Identity;
+      Plan, Retained_Policy : Digest; Value : out Pkg_Supply_Policy.Snapshot; Status : out Outcome) is
+   begin
+      if Context.Data.Planning then
+         Close (Context); Value := (others => <>); Status := Denied; return;
+      end if;
+      Read_Current (Context, Root_ID, Transaction_ID, Plan, Retained_Policy, Value, Status);
    end Observe;
+   procedure Observe_Planning (Context : in out Session; Root_ID, Transaction_ID : Identity;
+      Value : out Pkg_Supply_Policy.Snapshot; Status : out Outcome) is
+   begin
+      if not Context.Data.Planning then
+         Close (Context); Value := (others => <>); Status := Denied; return;
+      end if;
+      Read_Current (Context, Root_ID, Transaction_ID, Zero_Digest, Zero_Digest, Value, Status);
+   end Observe_Planning;
+   procedure Open_Planning (Policy_Directory, Floor_Directory : String;
+      Root_ID, Transaction_ID : Identity; Deadline : Counter;
+      Context : in out Session; Status : out Outcome) is
+      Value : Pkg_Supply_Policy.Snapshot;
+   begin
+      Status := Conflict; if Context.Data.Active then return; end if;
+      Close (Context); Status := Denied; if MC_Posix.Euid = 0 then return; end if;
+      Status := Invalid_Input;
+      if Root_ID = Zero_Identity or else Transaction_ID = Zero_Identity then return; end if;
+      Tick (Deadline, Status); if Status /= OK then return; end if;
+      MC_Text.Set (Context.Data.Policy_Path, Policy_Directory, Status); if Status /= OK then return; end if;
+      MC_Text.Set (Context.Data.Floor_Path, Floor_Directory, Status); if Status /= OK then Close (Context); return; end if;
+      Context.Data.Root_ID := Root_ID; Context.Data.Transaction_ID := Transaction_ID;
+      Context.Data.Deadline := Deadline; Context.Data.Active := True; Context.Data.Planning := True;
+      Observe_Planning (Context, Root_ID, Transaction_ID, Value, Status);
+   end Open_Planning;
+   procedure Bind_Publication (Context : in out Session; Root_ID, Transaction_ID : Identity;
+      Plan, Retained_Policy, Map : Digest; Status : out Outcome) is
+      Value : Pkg_Supply_Policy.Snapshot;
+   begin
+      Status := Invalid_Input;
+      if Plan = Zero_Digest or else Retained_Policy = Zero_Digest or else Map = Zero_Digest then
+         Close (Context); return;
+      end if;
+      Observe_Planning (Context, Root_ID, Transaction_ID, Value, Status); if Status /= OK then return; end if;
+      Context.Data.Plan := Plan; Context.Data.Retained_Policy := Retained_Policy; Context.Data.Map := Map;
+      Context.Data.Planning := False;
+      Observe (Context, Root_ID, Transaction_ID, Plan, Retained_Policy, Value, Status);
+   end Bind_Publication;
    procedure Open (Policy_Directory, Floor_Directory : String;
       Root_ID, Transaction_ID : Identity; Plan, Retained_Policy, Map : Digest;
       Deadline : Counter; Context : in out Session; Status : out Outcome) is

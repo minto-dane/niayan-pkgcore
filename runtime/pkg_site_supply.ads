@@ -22,6 +22,17 @@ package Pkg_Site_Supply with SPARK_Mode => Off is
    -- Parsing alone grants no authority. Only Open/Observe authenticate the
    -- independent protected filesystem inputs and sample the actual OS clock.
    type Session is limited private;
+   procedure Open_Planning (Policy_Directory, Floor_Directory : String;
+      Root_ID, Transaction_ID : Identity; Deadline : Counter;
+      Context : in out Session; Status : out Outcome);
+   procedure Observe_Planning (Context : in out Session; Root_ID, Transaction_ID : Identity;
+      Value : out Pkg_Supply_Policy.Snapshot; Status : out Outcome);
+   procedure Bind_Publication (Context : in out Session; Root_ID, Transaction_ID : Identity;
+      Plan, Retained_Policy, Map : Digest; Status : out Outcome);
+   -- Planning has no invented plan/map/policy hashes. Its snapshots have Map=0
+   -- and cannot satisfy the publication callback. Bind_Publication is a one-way
+   -- transition after reobserving the same pinned policy/floor and UTC high water
+   -- mark; it does not renew the deadline or authorize the supplied plan.
    procedure Open (Policy_Directory, Floor_Directory : String;
       Root_ID, Transaction_ID : Identity; Plan, Retained_Policy, Map : Digest;
       Deadline : Counter; Context : in out Session; Status : out Outcome);
@@ -49,6 +60,7 @@ package Pkg_Site_Supply with SPARK_Mode => Off is
 private
    type State is record
       Active : Boolean := False;
+      Planning : Boolean := False;
       Policy_Path, Floor_Path : MC_Text.Value := MC_Text.Empty;
       Root_ID, Transaction_ID : Identity := Zero_Identity;
       Plan, Retained_Policy, Map : Digest := Zero_Digest;
