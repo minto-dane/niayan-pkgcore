@@ -2,12 +2,14 @@
 with Ada.Containers.Ordered_Sets; with Ada.Unchecked_Deallocation; with Interfaces.C;
 with MC_Clock; with MC_Codec; with MC_FS; with MC_Posix;
 with Pkg_Conffile_Snapshot; with Pkg_Deb_Conffiles; with Pkg_Deb_Payload;
+with Pkg_Conffile_Observation;
 package body Pkg_Conffile_Choice with SPARK_Mode => Off is
    package T renames Pkg_Conffile_Transition; package S renames Pkg_Conffile_Snapshot;
    package D renames Pkg_Deb_Conffiles; package P renames Pkg_Deb_Payload;
    package Objects is new Ada.Containers.Ordered_Sets (Digest);
    use type Interfaces.C.int; use type Interfaces.C.unsigned;
    use type T.File_Kind; use type T.Action; use type T.Backup_Kind; use type T.Choice; use type P.Entry_Kind;
+   use type Word;
    type Data is record
       Root : MC_Posix.FD := -1;
       Reservation : Integer := -1;
@@ -15,6 +17,9 @@ package body Pkg_Conffile_Choice with SPARK_Mode => Off is
       Mode : T.Operation := T.Install_Upgrade;
       Path : P.Byte_Strings.Bounded_String;
       Prior, Incoming : T.Image;
+      Local_Mode, Local_UID, Local_GID : Word := 0;
+      Incoming_Entry : P.Payload_Entry;
+      Target_Effect, Backup_Effect : File_Effect;
       Prior_Original, Incoming_Original : Digest := Zero_Digest;
       Local, Backup : S.Snapshot;
       Proposal_Hash, Decision_Hash, Closure_Hash : Digest := Zero_Digest;
@@ -84,6 +89,7 @@ package body Pkg_Conffile_Choice with SPARK_Mode => Off is
          if Found and then Item.Present then
             if Item.Payload.Values.Kind /= P.Regular then Status := Unsupported; raise Interrupted; end if;
             Image := (T.Regular, Item.Payload.Values.Content);
+            if not Is_Prior then Value.State.Incoming_Entry := Item.Payload; end if;
             Include (Value.State.all, Image.Content); Include (Value.State.all, Item.Payload.Values.Xattrs);
             Include (Value.State.all, Item.Payload.Values.ACLs);
          elsif not Found then
@@ -110,6 +116,14 @@ package body Pkg_Conffile_Choice with SPARK_Mode => Off is
       Value.State.Path := P.Byte_Strings.To_Bounded_String (Path);
       Value.State.Prior_Original := Prior_Original; Value.State.Incoming_Original := Incoming_Original;
       S.Capture (Store, Integer (Value.State.Root), Path, Limit, Deadline, Value.State.Local, Status); Need;
+      if S.Current (Value.State.Local).Kind = T.Regular then
+         declare Observed : Pkg_Conffile_Observation.Observation; begin
+            Pkg_Conffile_Observation.Load (Store, S.Metadata (Value.State.Local), Path, Deadline, Observed, Status); Need;
+            Value.State.Local_Mode := Pkg_Conffile_Observation.Attributes (Observed).Node.Mode and 8#7777#;
+            Value.State.Local_UID := Pkg_Conffile_Observation.Attributes (Observed).Node.UID;
+            Value.State.Local_GID := Pkg_Conffile_Observation.Attributes (Observed).Node.GID;
+         end;
+      end if;
       Source (Prior_Original, True, Value.State.Prior, Prior_Declaration);
       Source (Incoming_Original, False, Value.State.Incoming, Incoming_Declaration);
       Value.State.Mode := (case Mode is when Update => (if Remove_Flag then T.Remove_On_Upgrade else T.Install_Upgrade),
@@ -159,6 +173,14 @@ package body Pkg_Conffile_Choice with SPARK_Mode => Off is
       if Status /= OK then Clear (Value); end if;
    exception when others => Clear (Value); Status := Indeterminate;
    end Recheck;
+   procedure Read_Effects (Store : MC_Store.Store; Value : in out Proposal;
+      Decision, Closure : Digest; Deadline : Counter;
+      Target, Backup : out File_Effect; Status : out Outcome) is
+   begin
+      Target := (others => <>); Backup := (others => <>);
+      Recheck (Store, Value, Decision, Closure, Deadline, Status);
+      if Status = OK then Target := Value.State.Target_Effect; Backup := Value.State.Backup_Effect; end if;
+   end Read_Effects;
    procedure Resolve (Store : in out MC_Store.Store; Value : in out Proposal;
       Expected : Digest; Selection : T.Choice; Backup_Path : String; Deadline : Counter;
       Decision, Closure : out Digest; Status : out Outcome) is
@@ -171,6 +193,35 @@ package body Pkg_Conffile_Choice with SPARK_Mode => Off is
                        and then B (B'First + A'Length) = '/')
                or else (B'Length < A'Length and then A (A'First .. A'First + B'Length - 1) = B
                        and then A (A'First + B'Length) = '/'));
+      procedure Describe (Destination : String; Content : Digest; Source : Attribute_Source; Effect : out File_Effect) is
+      begin
+         Effect := (others => <>); Effect.Path := P.Byte_Strings.To_Bounded_String (Destination);
+         Effect.Content := Content; Effect.Source := Source;
+         if Source = No_File then
+            if Content /= Zero_Digest then Status := Corrupt; raise Interrupted; end if;
+            return;
+         end if;
+         Effect.Source_Path := Value.State.Path;
+         if Source = Local_Observation then
+            if S.Current (Value.State.Local).Kind /= T.Regular or else Content /= S.Current (Value.State.Local).Content then
+               Status := Corrupt; raise Interrupted;
+            end if;
+            Effect.Object := S.Metadata (Value.State.Local);
+            Effect.Mode := Value.State.Local_Mode; Effect.UID := Value.State.Local_UID; Effect.GID := Value.State.Local_GID;
+         else
+            if Value.State.Incoming.Kind /= T.Regular or else Content /= Value.State.Incoming.Content then
+               Status := Corrupt; raise Interrupted;
+            end if;
+            Effect.Object := Value.State.Incoming_Original;
+            if S.Current (Value.State.Local).Kind = T.Regular then
+               Effect.Permission_Override := S.Metadata (Value.State.Local);
+               Effect.Mode := Value.State.Local_Mode; Effect.UID := Value.State.Local_UID; Effect.GID := Value.State.Local_GID;
+            else
+               Effect.Mode := Value.State.Incoming_Entry.Values.Mode;
+               Effect.UID := Value.State.Incoming_Entry.Values.UID; Effect.GID := Value.State.Incoming_Entry.Values.GID;
+            end if;
+         end if;
+      end Describe;
    begin
       Decision := Zero_Digest; Closure := Zero_Digest; Status := Invalid_Input;
       if Value.State = null then return; end if;
@@ -197,14 +248,31 @@ package body Pkg_Conffile_Choice with SPARK_Mode => Off is
       if Chosen.Next_Vendor.Kind = T.Regular then
          Next_Original := (if Value.State.Incoming.Kind = T.Regular then Value.State.Incoming_Original else Value.State.Prior_Original);
       end if;
-      declare Wire : Bytes (1 .. 208 + Backup_Path'Length) := (others => 0); begin
-         Wire (1 .. 8) := (78, 73, 65, 67, 67, 72, 48, 49); Wire (9 .. 40) := Expected;
+      Describe (P.Byte_Strings.To_String (Value.State.Path), Chosen.Content,
+         (if Chosen.Content = Zero_Digest then No_File elsif Chosen.Effect = T.Replace then Vendor_Payload else Local_Observation), Value.State.Target_Effect);
+      if Chosen.Backup /= T.No_Backup then
+         Describe (Backup_Path, Chosen.Backup_Content,
+            (if Chosen.Backup = T.Local_Backup then Local_Observation else Vendor_Payload), Value.State.Backup_Effect);
+      end if;
+      declare
+         Wire : Bytes (1 .. 368 + Backup_Path'Length) := (others => 0);
+         procedure Encode (At_Byte : Positive; Effect : File_Effect) is
+         begin
+            Wire (At_Byte) := Attribute_Source'Pos (Effect.Source);
+            MC_Codec.Put32 (Wire, At_Byte + 4, Effect.Mode); MC_Codec.Put32 (Wire, At_Byte + 8, Effect.UID);
+            MC_Codec.Put32 (Wire, At_Byte + 12, Effect.GID);
+            Wire (At_Byte + 16 .. At_Byte + 47) := Effect.Object;
+            Wire (At_Byte + 48 .. At_Byte + 79) := Effect.Permission_Override;
+         end Encode;
+      begin
+         Wire (1 .. 8) := (78, 73, 65, 67, 67, 72, 48, 50); Wire (9 .. 40) := Expected;
          Wire (41) := T.Choice'Pos (Selection); Wire (42) := T.Action'Pos (Chosen.Effect);
          Wire (43) := T.Backup_Kind'Pos (Chosen.Backup); Wire (44) := T.File_Kind'Pos (Chosen.Next_Vendor.Kind);
          Wire (45 .. 76) := Chosen.Content; Wire (77 .. 108) := Chosen.Backup_Content;
          Wire (109 .. 140) := Chosen.Next_Vendor.Content; Wire (141 .. 172) := Next_Original;
          Wire (173 .. 204) := S.Metadata (Value.State.Backup); MC_Codec.Put32 (Wire, 205, Word (Backup_Path'Length));
-         for I in 1 .. Backup_Path'Length loop Wire (208 + I) := Character'Pos (Backup_Path (Backup_Path'First + I - 1)); end loop;
+         Encode (209, Value.State.Target_Effect); Encode (289, Value.State.Backup_Effect);
+         for I in 1 .. Backup_Path'Length loop Wire (368 + I) := Character'Pos (Backup_Path (Backup_Path'First + I - 1)); end loop;
          MC_Store.Put (Store, Wire, Value.State.Decision_Hash, Status); Need;
       end;
       Include (Value.State.all, Value.State.Decision_Hash);

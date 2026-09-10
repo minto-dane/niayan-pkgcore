@@ -1,9 +1,17 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Finalization;
 with MC_Types; use MC_Types;
-with MC_Store; with Pkg_Conffile_Transition;
+with MC_Store; with Pkg_Conffile_Transition; with Pkg_Deb_Payload;
 package Pkg_Conffile_Choice with SPARK_Mode => Off is
    type Operation is (Update, Remove, Purge);
+   type Attribute_Source is (No_File, Local_Observation, Vendor_Payload);
+   type File_Effect is record
+      Path, Source_Path : Pkg_Deb_Payload.Byte_Strings.Bounded_String;
+      Content : Digest := Zero_Digest;
+      Source : Attribute_Source := No_File;
+      Object, Permission_Override : Digest := Zero_Digest;
+      Mode, UID, GID : Word := 0;
+   end record;
    type Proposal is new Ada.Finalization.Limited_Controlled with private;
    procedure Prepare (Store : in out MC_Store.Store; Root_FD : Integer;
       Root_ID, Transaction : Identity; Context : Digest; Mode : Operation;
@@ -17,6 +25,20 @@ package Pkg_Conffile_Choice with SPARK_Mode => Off is
       Decision, Closure : out Digest; Status : out Outcome);
    procedure Recheck (Store : MC_Store.Store; Value : in out Proposal;
       Decision, Closure : Digest; Deadline : Counter; Status : out Outcome);
+   procedure Read_Effects (Store : MC_Store.Store; Value : in out Proposal;
+      Decision, Closure : Digest; Deadline : Counter;
+      Target, Backup : out File_Effect; Status : out Outcome);
+   -- Rechecks before returning desired entries. No_File at Target.Path means
+   -- desired absence; empty Backup.Path means no backup entry. Object is the
+   -- full local observation or original vendor DEB, never a truncated attribute
+   -- profile. Source_Path locates the source entry even for renamed backups.
+   -- Vendor content inherits current regular-file mode/UID/GID when present;
+   -- Permission_Override binds that local observation. Otherwise vendor numeric
+   -- permissions are used. Local entries keep their observed permissions.
+   -- NIACCH02 records these sources and numeric permissions. Remaining source
+   -- attributes are retained, not silently defaulted; namespace/link identity,
+   -- ACL/capability interactions and attribute application still need the full
+   -- materialization/admission path. This is not a filesystem mutation API.
    procedure Clear (Value : in out Proposal);
    -- Internal content-choice planning, never an execution/consent authority.
    -- Prior_Original is the retained vendor baseline DEB (zero when untracked),
