@@ -1,0 +1,57 @@
+[
+  {
+    "filename": "victim.deb",
+    "sha256": "1ea789eff323c3c4b92a477c56687d5d4c45592c722806af55dcb0d7366562e9",
+    "size": 20672
+  },
+  {
+    "filename": "takeover.deb",
+    "sha256": "3fc1fbcd880385ab818ea19c2f30de13bc0422bdc4b371a0da1f965851f2bd66",
+    "size": 20672
+  },
+  {
+    "filename": "unjustified.deb",
+    "sha256": "01b900d36a1c0264db37f914118d67db48f7d0037342c1556e7a464cbdfd03d5",
+    "size": 20672
+  },
+  {
+    "filename": "virtual.deb",
+    "sha256": "2bf0bf908609f04411cd4d130b498a5846b644042fa3c466e80daadde30fe4a5",
+    "size": 20672
+  },
+  {
+    "filename": "version.deb",
+    "sha256": "96267aee5f4ce47b3091cc8b4a1c20f7174960cac04f6024db29eacaaec6de10",
+    "size": 20672
+  },
+  {
+    "filename": "arch-match.deb",
+    "sha256": "e10b0e5aacbc44ac7d0b35f76c418a0008e0d8e632d8d52682c68d3789aec072",
+    "size": 20672
+  },
+  {
+    "filename": "arch-miss.deb",
+    "sha256": "bbc9171843f38d5ea578bebf4cc8b5a877b19a5e0e662759d635756338941412",
+    "size": 20672
+  },
+  {
+    "filename": "same-amd64.deb",
+    "sha256": "fc93d30a36dfd01953b7a23ef91015d2ce6369a400cddfb4ddf15d3d3c55b5a7",
+    "size": 20672
+  },
+  {
+    "filename": "same-arm64.deb",
+    "sha256": "4c54d832e6c481a28d4cf3ae491eeb0cadf5731046b65359698a62d8b2bf7392",
+    "size": 20672
+  },
+  {
+    "filename": "different-arm64.deb",
+    "sha256": "110b72bfda55810650003d16a54cc4d96ba5e8e17673416c08cf329a494272b1",
+    "size": 20672
+  },
+  {
+    "filename": "mode-arm64.deb",
+    "sha256": "96adac3d3ac961a9be3ea6edb92792c7f69c3b57395b6d394bf1fabbf021a454",
+    "size": 20672
+  }
+]

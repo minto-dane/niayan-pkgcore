@@ -36,8 +36,9 @@ def fixtures():
          entry('./long-link', kind=tarfile.SYMTYPE, link=long)]),
     ]
     for name, fmt, entries in sources:
+        extra = 'Replaces: root-overlay (<< 2), root-conflicting (= 1)\n' if name == 'base' else ''
         control = (f'Package: root-{name}\nVersion: 1\nArchitecture: all\n'
-                   'Maintainer: Fixture <fixture@example.invalid>\nDescription: root fixture\n').encode()
+                   'Maintainer: Fixture <fixture@example.invalid>\nDescription: root fixture\n' + extra).encode()
         yield name + '.deb', (b'!<arch>\n' + member('debian-binary', b'2.0\n') +
             member('control.tar', tar([('./control', control, tarfile.REGTYPE, '')])) +
             member('data.tar', archive(entries, fmt)))

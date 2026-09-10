@@ -195,6 +195,15 @@ package body Pkg_Generation_Intent with SPARK_Mode => Off is
       Free (Enabled);
    exception when others => Free (Enabled); Status := Indeterminate;
    end Check_Target;
+   procedure Read_Native_Architecture (Store : MC_Store.Store; Address, Catalog, Closure : Digest;
+      Deadline : Counter; Native_Architecture : out MC_Text.Value; Status : out Outcome) is
+      Value : Data; Enabled : List_Access;
+   begin
+      Native_Architecture := MC_Text.Empty; Read (Store, Address, Deadline, Value, Enabled, Status);
+      if Status = OK and then (Value.Catalog /= Catalog or else Value.Closure /= Closure) then Status := Conflict; end if;
+      if Status = OK then Native_Architecture := Value.Native; end if; Free (Enabled);
+   exception when others => Free (Enabled); Native_Architecture := MC_Text.Empty; Status := Indeterminate;
+   end Read_Native_Architecture;
    procedure Verify (Store : in out MC_Store.Store; Address : Digest; Root_ID : Identity;
       Before : GD.Descriptor; Before_Closure, Catalog, Closure : Digest;
       Deadline : Counter; Binding : out Digest; Status : out Outcome) is

@@ -13,6 +13,11 @@ package Pkg_Root_Archive with SPARK_Mode => Off is
       Limit, Deadline : Counter; Archive : out Digest; Status : out Outcome);
    procedure Verify_Target (Store : in out MC_Store.Store; Manifest, Catalog, Closure : Digest;
       Limit, Deadline : Counter; Archive : out Digest; Status : out Outcome);
+   procedure Verify_Ownership (Store : in out MC_Store.Store; Manifest, Catalog, Closure : Digest;
+      Native_Architecture : String; Limit, Deadline : Counter;
+      Archive, Ownership_Binding : out Digest; Status : out Outcome);
+   -- Adds native shared-file/Replaces validation using the enclosing intent's
+   -- architecture. This still does not grant site/effect or extraction authority.
    -- Additionally requires the exact enclosing generation's catalog and closure.
    -- Assemble real payload tar records into one root archive in the existing
    -- CAS. Every canonical path needs one explicit claim index, in path order.

@@ -12,7 +12,7 @@ procedure Run_Root_Archive_Tests with SPARK_Mode => Off is
    use type Interfaces.C.unsigned; use type MC_FS.Entry_Kind; use type Byte;
    Store : MC_Store.Store; Media, CAS_Root : MC_FS.Root; Status : Outcome;
    Now, Deadline : Counter; Value : C.Catalog; Payload : X.Index; Source : P.Inventory;
-   Packages : C.Selection (1 .. 3); Catalog, Closure, Manifest, Archive, Again, Other : Digest;
+   Packages : C.Selection (1 .. 3); Catalog, Closure, Manifest, Archive, Again, Other, Ownership : Digest;
    type Digest_Array is array (Positive range <>) of Digest;
    Limit : constant Counter := 1_048_576;
    procedure Need (Name : String) is
@@ -43,7 +43,9 @@ begin
       A.Verify (Store, Zero_Digest, Limit, 0, Archive, Status);
       Expect (Status = Denied and then Archive = Zero_Digest, "root verify refused");
       A.Verify_Target (Store, Zero_Digest, Zero_Digest, Zero_Digest, Limit, 0, Archive, Status);
-      Expect (Status = Denied and then Archive = Zero_Digest, "root bound verify refused"); Report; return;
+      Expect (Status = Denied and then Archive = Zero_Digest, "root bound verify refused");
+      A.Verify_Ownership (Store, Zero_Digest, Zero_Digest, Zero_Digest, "amd64", Limit, 0, Archive, Ownership, Status);
+      Expect (Status = Denied and then Archive = Zero_Digest and then Ownership = Zero_Digest, "root ownership verify refused"); Report; return;
    end if;
    MC_Store.Initialize (Ada.Command_Line.Argument (1), Store, Status); Need ("private CAS");
    MC_FS.Open_Root (Ada.Directories.Full_Name (Ada.Command_Line.Argument (2)), Media, Status); Need ("media");
@@ -105,6 +107,8 @@ begin
       Expect (Status = Conflict and then Again = Zero_Digest, "foreign closure cannot carry this root");
       A.Verify_Target (Store, Manifest, Zero_Digest, Closure, Limit, Deadline, Again, Status);
       Expect (Status = Invalid_Input and then Again = Zero_Digest, "enclosing catalog cannot be omitted");
+      A.Verify_Ownership (Store, Manifest, Catalog, Closure, "amd64", Limit, Deadline, Again, Ownership, Status);
+      Need ("retained logical ownership"); Expect (Again = Archive and then Ownership /= Zero_Digest, "owned root binding");
       High := Chosen;
       A.Build (Store, Catalog, Closure, High, Limit, Deadline, Again, Other, Status); Need ("highest array bound");
       Expect (Again = Manifest and then Other = Archive, "selection bounds do not alter bytes");
@@ -117,6 +121,8 @@ begin
       Changed := Chosen; Changed (1) := Root_Alternative; Changed (Dir) := Dir_Alternative;
       A.Build (Store, Catalog, Closure, Changed, Limit, Deadline, Again, Other, Status); Need ("explicit shared directory owner");
       Expect (Again /= Manifest and then Other /= Archive, "owner attributes affect archive and manifest");
+      A.Verify_Ownership (Store, Again, Catalog, Closure, "amd64", Limit, Deadline, Other, Ownership, Status);
+      Expect (Status = Conflict and then Other = Zero_Digest and then Ownership = Zero_Digest, "structural candidate needs justified owners");
       Refuse ("missing path", Chosen (2 .. Chosen'Last));
       Changed := Chosen; Changed (1) := Chosen (2); Refuse ("duplicate path", Changed);
       Changed := Chosen; Changed (1) := Chosen (2); Changed (2) := Chosen (1); Refuse ("path order", Changed);

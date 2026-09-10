@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT
 with Ada.Containers.Vectors; with Ada.Unchecked_Deallocation; with Interfaces.C;
 with MC_Clock; with MC_Codec; with MC_FS; with MC_Posix; with MC_SHA256;
-with Pkg_Catalog_Retention; with Pkg_Catalog_Store; with Pkg_Deb_Payload;
+with Pkg_Payload_Ownership; with Pkg_Catalog_Retention; with Pkg_Catalog_Store; with Pkg_Deb_Payload;
 with Pkg_Selected_Catalog; with Pkg_Tar_Framing;
 package body Pkg_Root_Archive with SPARK_Mode => Off is
    package X renames Pkg_Payload_Index; package P renames Pkg_Deb_Payload;
@@ -19,9 +19,9 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
    end Tick;
    function Padded (Size : Counter) return Counter is
      (Size + (if Size mod 512 = 0 then 0 else 512 - Size mod 512));
-   procedure Build (Store : in out MC_Store.Store; Catalog, Closure : Digest;
-      Chosen : Selection; Limit, Deadline : Counter;
-      Manifest, Archive : out Digest; Status : out Outcome) is
+   procedure Assemble (Store : in out MC_Store.Store; Catalog, Closure : Digest;
+      Chosen : Selection; Native_Architecture : String; Limit, Deadline : Counter;
+      Manifest, Archive, Ownership_Binding : out Digest; Status : out Outcome) is
       type Part is record
          Claim, Source_Number, Ordinal, Dependency : Natural := 0;
          First, Length : Counter := 0;
@@ -47,6 +47,7 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
       Hash : MC_SHA256.Context := MC_SHA256.Initialize;
       Buffer : Bytes (1 .. 65_536); Wire : Buffer_Access := null;
       Sort_Count : Natural := 0;
+      Owned : Digest := Zero_Digest; Issue : Pkg_Payload_Ownership.Finding;
       Interrupted : exception;
       procedure Check is
       begin if Status /= OK then raise Interrupted; end if; end Check;
@@ -119,7 +120,7 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
          end loop;
       end Emit;
    begin
-      Manifest := Zero_Digest; Archive := Zero_Digest; Status := Denied;
+      Manifest := Zero_Digest; Archive := Zero_Digest; Ownership_Binding := Zero_Digest; Status := Denied;
       if MC_Posix.Euid = 0 then return; end if;
       Status := Invalid_Input;
       if Catalog = Zero_Digest or else Closure = Zero_Digest or else Chosen'Length not in 1 .. Max_Entries
@@ -171,6 +172,9 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
             end if;
          end;
       end loop;
+      if Native_Architecture /= "" then
+         Pkg_Payload_Ownership.Check (Value, Payload, Chosen, Native_Architecture, Deadline, Owned, Issue, Status); Check;
+      end if;
       Sorting.Sort (By_Source); Clock;
       for Position of By_Source loop
          Clock;
@@ -224,23 +228,27 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
       MC_Codec.Put64 (Wire.all, 137, Wide (Total)); MC_Codec.Put64 (Wire.all, 145, Wide (Chosen'Length));
       for I in Parts'Range loop MC_Codec.Put64 (Wire.all, Header_Size + 8 * (I - 1) + 1, Wide (Parts (I).Claim)); end loop;
       Clock; MC_Store.Put (Store, Wire.all, Saved, Status); Check; Clock;
-      Manifest := Saved; Archive := Root_Hash; Status := OK; Cleanup;
+      Manifest := Saved; Archive := Root_Hash; Ownership_Binding := Owned; Status := OK; Cleanup;
    exception
-      when Interrupted => Cleanup; Manifest := Zero_Digest; Archive := Zero_Digest;
-      when Storage_Error => Cleanup; Manifest := Zero_Digest; Archive := Zero_Digest; Status := Exhausted;
-      when others => Cleanup; Manifest := Zero_Digest; Archive := Zero_Digest; Status := Indeterminate;
-   end Build;
+      when Interrupted => Cleanup; Manifest := Zero_Digest; Archive := Zero_Digest; Ownership_Binding := Zero_Digest;
+      when Storage_Error => Cleanup; Manifest := Zero_Digest; Archive := Zero_Digest; Ownership_Binding := Zero_Digest; Status := Exhausted;
+      when others => Cleanup; Manifest := Zero_Digest; Archive := Zero_Digest; Ownership_Binding := Zero_Digest; Status := Indeterminate;
+   end Assemble;
+   procedure Build (Store : in out MC_Store.Store; Catalog, Closure : Digest;
+      Chosen : Selection; Limit, Deadline : Counter; Manifest, Archive : out Digest; Status : out Outcome) is
+      Ignored : Digest;
+   begin Assemble (Store, Catalog, Closure, Chosen, "", Limit, Deadline, Manifest, Archive, Ignored, Status); end Build;
    procedure Verify_Bound (Store : in out MC_Store.Store; Manifest, Catalog, Closure : Digest;
-      Limit, Deadline : Counter; Archive : out Digest; Status : out Outcome) is
+      Native_Architecture : String; Limit, Deadline : Counter; Archive, Ownership_Binding : out Digest; Status : out Outcome) is
       Wire : Buffer_Access := null; File : MC_FS.File; Info : MC_FS.Entry_Info;
-      Used, Count : Natural; Expected, Actual : Digest;
+      Used, Count : Natural; Expected, Actual, Owned : Digest;
       Interrupted : exception;
       procedure Check is
       begin if Status /= OK then raise Interrupted; end if; end Check;
       procedure Cleanup is
       begin Free (Wire); MC_FS.Close (File); end Cleanup;
    begin
-      Archive := Zero_Digest; Status := Denied; if MC_Posix.Euid = 0 then return; end if;
+      Archive := Zero_Digest; Ownership_Binding := Zero_Digest; Status := Denied; if MC_Posix.Euid = 0 then return; end if;
       Status := Invalid_Input;
       if Manifest = Zero_Digest or else Limit not in 1_024 .. MC_Store.Max_Object_Size then return; end if;
       Tick (Deadline, Status); Check;
@@ -271,23 +279,34 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
             end if;
             Chosen (I) := Positive (MC_Codec.U64 (Wire.all, Header_Size + 8 * (I - 1) + 1));
          end loop;
-         Build (Store, Wire (9 .. 40), Wire (41 .. 72), Chosen, Limit, Deadline, Expected, Actual, Status); Check;
+         Assemble (Store, Wire (9 .. 40), Wire (41 .. 72), Chosen, Native_Architecture, Limit, Deadline, Expected, Actual, Owned, Status); Check;
       end;
       if Expected /= Manifest or else Actual /= Wire (105 .. 136) then Status := Corrupt; Check; end if;
-      Tick (Deadline, Status); Check; Archive := Actual; Cleanup;
+      Tick (Deadline, Status); Check; Archive := Actual; Ownership_Binding := Owned; Cleanup;
    exception
-      when Interrupted => Cleanup; Archive := Zero_Digest;
-      when Storage_Error => Cleanup; Archive := Zero_Digest; Status := Exhausted;
-      when others => Cleanup; Archive := Zero_Digest; Status := Indeterminate;
+      when Interrupted => Cleanup; Archive := Zero_Digest; Ownership_Binding := Zero_Digest;
+      when Storage_Error => Cleanup; Archive := Zero_Digest; Ownership_Binding := Zero_Digest; Status := Exhausted;
+      when others => Cleanup; Archive := Zero_Digest; Ownership_Binding := Zero_Digest; Status := Indeterminate;
    end Verify_Bound;
    procedure Verify (Store : in out MC_Store.Store; Manifest : Digest;
       Limit, Deadline : Counter; Archive : out Digest; Status : out Outcome) is
-   begin Verify_Bound (Store, Manifest, Zero_Digest, Zero_Digest, Limit, Deadline, Archive, Status); end Verify;
+      Ignored : Digest;
+   begin Verify_Bound (Store, Manifest, Zero_Digest, Zero_Digest, "", Limit, Deadline, Archive, Ignored, Status); end Verify;
    procedure Verify_Target (Store : in out MC_Store.Store; Manifest, Catalog, Closure : Digest;
       Limit, Deadline : Counter; Archive : out Digest; Status : out Outcome) is
+      Ignored : Digest;
    begin
       Archive := Zero_Digest; Status := Denied; if MC_Posix.Euid = 0 then return; end if;
       Status := Invalid_Input; if Catalog = Zero_Digest or else Closure = Zero_Digest then return; end if;
-      Verify_Bound (Store, Manifest, Catalog, Closure, Limit, Deadline, Archive, Status);
+      Verify_Bound (Store, Manifest, Catalog, Closure, "", Limit, Deadline, Archive, Ignored, Status);
    end Verify_Target;
+   procedure Verify_Ownership (Store : in out MC_Store.Store; Manifest, Catalog, Closure : Digest;
+      Native_Architecture : String; Limit, Deadline : Counter;
+      Archive, Ownership_Binding : out Digest; Status : out Outcome) is
+   begin
+      Archive := Zero_Digest; Ownership_Binding := Zero_Digest; Status := Denied; if MC_Posix.Euid = 0 then return; end if;
+      Status := Invalid_Input;
+      if Catalog = Zero_Digest or else Closure = Zero_Digest or else Native_Architecture = "" then return; end if;
+      Verify_Bound (Store, Manifest, Catalog, Closure, Native_Architecture, Limit, Deadline, Archive, Ownership_Binding, Status);
+   end Verify_Ownership;
 end Pkg_Root_Archive;
