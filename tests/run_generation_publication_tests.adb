@@ -14,6 +14,7 @@ with Pkg_Catalog_Retention; with Pkg_Catalog_Store; with Pkg_Deb_Metadata; with 
 with Pkg_Payload_Index; with Pkg_Selected_Catalog;
 with Pkg_Deb_Final_Set; with Pkg_Deb_Transition;
 with Pkg_Root_Archive; with Pkg_Archive_Supply; with Pkg_Supply_Map; with Pkg_Supply_Policy;
+with Pkg_Site_Supply;
 with Pkg_File_Plan; with Pkg_Generation_Descriptor; with Pkg_Generation_Manifest; with Pkg_Generation_Intent;
 with Pkg_Generation_Publisher; with Pkg_Generation_Stage; with Pkg_Managed_Engine; with Pkg_Root_State;
 with Resolver_Model; with Resolver_Admission; with Resolver_Wire;
@@ -51,6 +52,11 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    Laboratory : constant Boolean := Ada.Command_Line.Argument_Count >= 6;
    Root_Laboratory : constant Boolean := Ada.Command_Line.Argument_Count = 6
       and then Ada.Command_Line.Argument (6) = "root-archive";
+   Site_Laboratory : constant Boolean := Ada.Command_Line.Argument_Count = 8
+      and then Ada.Command_Line.Argument (6) in "site-supply" | "site-refusal";
+   Site_Context : Pkg_Site_Supply.Session;
+   procedure Observe_Site is new Pkg_Site_Supply.Observe_Current (Site_Context);
+   Site_Calls : Natural := 0;
    Root_Tar : Digest := Zero_Digest; Root_Tar_Size : Counter := 0;
    First_Plan : Digest; First_Tx : Identity;
    type Plan_Access is access FP.Plan;
@@ -239,6 +245,10 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    begin
       Value := (others => <>); Status := Denied;
       if not Matches (R, T, Plan) or else Policy /= M.Supply_Policy or else Inject = Supply_Denied then return; end if;
+      if Site_Laboratory then
+         Site_Calls := Site_Calls + 1;
+         Observe_Site (R, T, Plan, Policy, Value, Status); return;
+      end if;
       Value := (Map => Supply_Map, Observed_At => Supply_Now, Count => 1, others => <>);
       Value.Trusted (1) := Supply_Trust (1);
       if Inject = Supply_Key_Changed then Value.Trusted (1).Key := PK2; end if;
@@ -939,9 +949,11 @@ begin
    end;
    if Laboratory and then Ada.Command_Line.Argument (6) = "recover" then Recover_Laboratory; return; end if;
    if Laboratory then
-      Expect (Laboratory and then Ada.Command_Line.Argument_Count = 6 and then Ada.Command_Line.Argument (6) in "checkpoint" | "root-archive",
+      Expect (Site_Laboratory or else (Ada.Command_Line.Argument_Count = 6
+         and then Ada.Command_Line.Argument (6) in "checkpoint" | "root-archive"),
          "explicit disposable lab checkpoint mode");
    end if;
+   if Site_Laboratory then MC_Clock.Realtime_Seconds (Supply_Now, S); Need ("independent actual receipt time"); end if;
    MC_Store.Initialize (Store_Path, Store, S); Need ("initialize fixture CAS");
    MC_Store.Put (Store, Bytes'(0, 0), Attrs, S); Need ("empty attributes");
    MC_Store.Put (Store, Bytes'(7, 8, 9), Receipt, S); Need ("synthetic health receipt"); MC_Store.Close (Store);
@@ -988,6 +1000,23 @@ begin
       MC_Atomic.Write (State, "root.state", Frame, False, S); Need ("restore exact initial state");
    end; MC_FS.Close (State);
    Read_Current; Expect (S = Stale and then Current = GD.Empty, "no fictitious initial generation");
+   if Site_Laboratory then
+      Complete_Stage (False);
+      Pkg_Site_Supply.Open (Ada.Command_Line.Argument (7), Ada.Command_Line.Argument (8),
+         Root_ID, P.Transaction_ID, Plan_Hash, M.Supply_Policy, Supply_Map,
+         Observation_Deadline, Site_Context, S); Need ("protected independent supply provider");
+      Publish;
+      if Ada.Command_Line.Argument (6) = "site-refusal" then
+         Expect (S = Denied, "independent current supply policy refuses publication");
+         Read_Current; Expect (S = Stale and then Current = GD.Empty, "provider refusal leaves initial generation");
+      else
+         Need ("publication with protected independent supply provider");
+         Read_Current; Need ("independent provider accepted readback");
+         Expect (Current = After and then Site_Calls > 2, "provider rechecked under composed publication reservations");
+      end if;
+      Ada.Text_IO.Put_Line ("SITE_OBSERVATIONS " & Natural'Image (Site_Calls));
+      Pkg_Site_Supply.Close (Site_Context); Report; return;
+   end if;
    if Root_Laboratory then
       Complete_Stage (False);
       declare CAS : MC_FS.Root; Info : MC_FS.Entry_Info;

@@ -6,6 +6,11 @@
   "sources": "pkgcore.gpr",
   "executables": [
     {
+      "source": "build/bin/pkg_supply_observe",
+      "destination": "usr/libexec/nia/pkg_supply_observe",
+      "mode": "0755"
+    },
+    {
       "source": "build/bin/pkg_store_bootstrap",
       "destination": "usr/libexec/nia/pkg_store_bootstrap",
       "mode": "0755"
