@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: BSD-3-Clause
-with Interfaces.C; with MC_Clock; with MC_Posix;
+with Interfaces.C; with MC_Clock; with MC_Posix; with Pkg_Conffile_Observation;
 package body Pkg_Conffile_Snapshot with SPARK_Mode => Off is
    use type System.Address; use type Interfaces.C.int; use type Interfaces.C.long;
    use type Interfaces.C.unsigned; use type Interfaces.C.unsigned_long_long;
@@ -44,6 +44,7 @@ package body Pkg_Conffile_Snapshot with SPARK_Mode => Off is
       Size : aliased Interfaces.C.unsigned_long_long := 0;
       Used : aliased Interfaces.C.unsigned := 0;
       Content, Meta_Hash : Digest := Zero_Digest;
+      Observed : Pkg_Conffile_Observation.Observation;
       Buffer : Bytes (1 .. 65_536); Writer : MC_Store.Writer;
       Offset : Counter := 0; Now : Counter; Read : Interfaces.C.long;
       Interrupted : exception;
@@ -90,6 +91,11 @@ package body Pkg_Conffile_Snapshot with SPARK_Mode => Off is
       declare
          Raw : Bytes (1 .. Natural (Used)) with Import, Address => Meta;
       begin MC_Store.Put (Store, Raw, Meta_Hash, Status); Need; end;
+      Pkg_Conffile_Observation.Load (Store, Meta_Hash, Path, Deadline, Observed, Status); Need;
+      if Pkg_Conffile_Observation.Image (Observed).Content /= Content
+        or else Pkg_Conffile_Observation.Attributes (Observed).Size /= Counter (Size) then
+         Status := Corrupt; raise Interrupted;
+      end if;
       Status := Result (Check (Handle, Interfaces.C.unsigned_long_long (Deadline))); Need; Clock;
       Value.Handle := Handle; Handle := System.Null_Address;
       Value.Reservation := MC_Store.Native_Reservation (Store); Value.Meta := Meta_Hash;
