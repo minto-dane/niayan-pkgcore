@@ -136,4 +136,8 @@ mkdir -p "$D/run_archive_supply_tests"
 mkdir -p "$D/"run_archive_supply_tests/store
 echo 'Running run_archive_supply_tests'
 timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_archive_supply_tests" "$D/"run_archive_supply_tests/store "$PWD/"tests/fixtures/selected-catalog
+mkdir -p "$D/run_supply_map_tests"
+mkdir -p "$D/"run_supply_map_tests/store
+echo 'Running run_supply_map_tests'
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_supply_map_tests" "$D/"run_supply_map_tests/store "$PWD/"tests/fixtures/selected-catalog
 timeout --kill-after=5s 600s python3 "$PWD/tests/check_deb_final_set_upstream.py" --media "$PWD/tests/fixtures/deb-final-set" --work "$D/upstream-endpoint"

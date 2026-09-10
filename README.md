@@ -22,3 +22,5 @@ The internal generation SDK assembles bounded inactive stages and binds a verifi
 Missing pins or guards fail closed. The build does not install services, enroll keys or enable live workers. Documented site integration, independent review and qualification gaps must be closed before production use. Imported edition notes remain in the initial Git commit and their historical evidence directories.
 
 The archive supply SDK verifies a scoped observer signature against independent site policy, checks every referenced CAS object and reobserves the original DEB's control. It supplies a per-original binding, not publication authority. The integration workspace tests real archive authentication through this reader; production key provisioning, whole-plan coverage and generation retention remain required.
+
+The supply map SDK binds a predecessor and candidate catalog to exactly the newly required original DEBs. It independently reobserves both catalogs and all retained inputs, verifies the scoped receipts, and separates fresh verification from historical retention. Connecting the map to accepted publication and recovery authority remains mandatory.
