@@ -3,13 +3,14 @@ with Ada.Unchecked_Deallocation; with Interfaces.C;
 with MC_Atomic; with MC_Clock; with MC_Dirents; with MC_FS; with MC_Posix; with MC_SHA256; with MC_Store;
 with Pkg_Catalog_Store; with Pkg_Catalog_Retention; with Pkg_File_Engine; with Pkg_File_Plan; with Pkg_File_Replay;
 with Pkg_Generation_Manifest; with Pkg_Generation_Stage; with Pkg_Generation_Intent;
-with Pkg_Recovery_Audit; with Pkg_Root_State;
+with Pkg_Recovery_Audit; with Pkg_Root_State; with Pkg_Supply_Map;
 package body Pkg_Generation_Publisher with SPARK_Mode => Off is
    package GD renames Pkg_Generation_Descriptor;
    package GM renames Pkg_Generation_Manifest;
    package Staging is new Pkg_Generation_Stage (Authorize_Stage);
    use type Interfaces.C.unsigned; use type Interfaces.C.int; use type Wide; use type Word;
    use type Pkg_Root_State.State;
+   use type Pkg_Supply_Map.Authorities;
    use type GD.Descriptor; use type GM.Format_Kind; use type Pkg_File_Replay.Direction;
    type Plan_Access is access Pkg_File_Plan.Plan;
    type Buffer_Access is access Bytes;
@@ -200,6 +201,10 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       Root, State : MC_FS.Root; Lock, Root_Lock : MC_FS.File; Store : MC_Store.Store;
       RS : Pkg_Root_State.State; Before, After, Prior, Discarded : GD.Descriptor; M, Baseline : GM.Manifest;
       Before_Closure, Native_Binding : Digest := Zero_Digest;
+      Supply_Target : Pkg_Supply_Map.Context;
+      Supply_Value : Pkg_Supply_Policy.Snapshot;
+      Supply_Until, Last_Supply_Now : Counter := 0;
+      Recorded, Supply_Checked : Boolean := False;
       P, Old_Plan : Plan_Access := null; Encoded : Buffer_Access := null; Used : Natural;
       Hold : Staging.Verified_Generation; Audit : Pkg_Recovery_Audit.Report;
       procedure Time_Left (Result : out Outcome) is
@@ -209,22 +214,87 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
          MC_Clock.Boottime_Milliseconds (Now, Result);
          if Result = OK and then Now >= Deadline then Result := Stale; end if;
       end Time_Left;
+      procedure Check_Supply_Policy (Value : out Pkg_Supply_Policy.Snapshot; Result : out Outcome) is
+         Started, Finished, Elapsed, Current : Counter;
+      begin
+         MC_Clock.Boottime_Milliseconds (Started, Result); if Result /= OK then return; end if;
+         Observe_Supply (P.Root_ID, P.Transaction_ID, Expected_Plan, M.Supply_Policy, Value, Result);
+         if Result /= OK then return; end if;
+         if Value.Map /= Supply_Value.Map or else Value.Count /= Supply_Value.Count
+           or else Value.Trusted (1 .. Value.Count) /= Supply_Value.Trusted (1 .. Supply_Value.Count)
+         then Result := Denied; return; end if;
+         if Value.Observed_At not in 1 .. 2 ** 53 - 1 or else Value.Observed_At < Last_Supply_Now
+           or else Value.Observed_At < Supply_Value.Observed_At then Result := Stale; return; end if;
+         MC_Clock.Boottime_Milliseconds (Finished, Result); if Result /= OK then return; end if;
+         if Finished < Started then Result := Stale; return; end if;
+         Elapsed := (Finished - Started) / 1_000;
+         if (Finished - Started) mod 1_000 /= 0 then Elapsed := Elapsed + 1; end if;
+         if Elapsed > 2 ** 53 - 1 - Value.Observed_At then Result := Stale; return; end if;
+         Current := Value.Observed_At + Elapsed;
+         if not Recorded and then Supply_Until /= 0 and then Current >= Supply_Until then Result := Stale; return; end if;
+         Last_Supply_Now := Value.Observed_At; Value.Observed_At := Current; Time_Left (Result);
+      end Check_Supply_Policy;
       procedure Guard (Root_ID, Transaction_ID : Identity; Plan, Evidence : Digest;
          Epoch, Fence : Counter; Phase : String; Result : out Outcome) is
+         Current_Policy : Pkg_Supply_Policy.Snapshot;
       begin
          Result := Denied;
-         if P = null or else Native_Binding = Zero_Digest
+         if P = null or else Native_Binding = Zero_Digest or else not Supply_Checked
            or else not Staging.Held (Hold) or else Staging.Manifest (Hold) /= After.Manifest
            or else Root_ID /= P.Root_ID or else Transaction_ID /= P.Transaction_ID or else Plan /= Expected_Plan
            or else Epoch /= P.Epoch or else Fence /= P.Fence
            or else (Evidence /= Zero_Digest and then Evidence /= Health_Receipt)
            or else Phase in "restore" | "repair-journal" then return; end if;
          Time_Left (Result); if Result /= OK then return; end if;
+         Check_Supply_Policy (Current_Policy, Result); if Result /= OK then return; end if;
          Managed.Guard (Root_ID, Transaction_ID, Plan, Evidence, Epoch, Fence, Phase, Result);
-         if Result = OK then Time_Left (Result); end if;
+         if Result = OK then Check_Supply_Policy (Current_Policy, Result); end if;
       end Guard;
       package Engine is new Pkg_File_Engine (Guard);
       C : Engine.Context;
+      procedure Validate_Inputs (Locked_Store : in out MC_Store.Store; Result : out Outcome) is
+         Latest : Pkg_Root_State.State; Checked_Before, Checked_After : GD.Descriptor;
+         Checked_Image : GM.Manifest; Current_Policy : Pkg_Supply_Policy.Snapshot;
+      begin
+         Native_Binding := Zero_Digest; Supply_Checked := False;
+         Read_State (Root, State, P.Root_ID, Latest, Result);
+         if Result = OK and then Latest /= RS then Result := Stale; end if;
+         if Result = OK then GD.Check (Locked_Store, P.all, Checked_Before, Checked_After, Result); end if;
+         if Result = OK and then (Checked_Before /= Before or else Checked_After /= After) then Result := Conflict; end if;
+         if Result = OK then Read_Manifest (Locked_Store, After, Checked_Image, Result); end if;
+         if Result = OK then GM.Check_Retention (Locked_Store, Checked_Image, Deadline, Result); end if;
+         if Result = OK and then Before /= GD.Empty then
+            Read_Manifest (Locked_Store, Before, Checked_Image, Result);
+            if Result = OK then GM.Check_Retention (Locked_Store, Checked_Image, Deadline, Result); end if;
+         end if;
+         if Result = OK then
+            Pkg_Generation_Intent.Verify (Locked_Store, M.Intent, P.Root_ID, Before, Before_Closure,
+               M.Catalog, M.Catalog_Closure, Deadline, Native_Binding, Result);
+         end if;
+         if Result = OK and then Recorded then
+            -- An orphan Prepared log is not an admitted transaction. Historical
+            -- policy is considered only for the exact actual active/accepted
+            -- root state, after checking the complete journal under this lock.
+            Pkg_Recovery_Audit.Inspect (State_Path, Store_Path, Expected_Plan, Audit, Result);
+         end if;
+         if Result = OK then
+            Supply_Target := (P.Root_ID, Before, Before_Closure, M.Catalog, M.Catalog_Closure);
+            Pkg_Supply_Policy.Load (Locked_Store, M.Supply_Policy, Deadline, Supply_Value, Result);
+         end if;
+         if Result = OK then Check_Supply_Policy (Current_Policy, Result); end if;
+         if Result = OK then
+            if Recorded then
+               Pkg_Supply_Policy.Recheck_Recorded (Locked_Store, M.Supply_Policy, Supply_Target,
+                  Current_Policy.Trusted (1 .. Current_Policy.Count), Current_Policy.Observed_At, Deadline, Result);
+            else
+               Pkg_Supply_Policy.Verify_New (Locked_Store, M.Supply_Policy, Supply_Target,
+                  Current_Policy.Trusted (1 .. Current_Policy.Count), Current_Policy.Observed_At, Deadline, Supply_Until, Result);
+            end if;
+         end if;
+         if Result = OK then Check_Supply_Policy (Current_Policy, Result); end if;
+         Supply_Checked := Result = OK;
+      end Validate_Inputs;
+      procedure Revalidate is new Engine.Check_Inputs (Validate_Inputs);
       procedure Done is
       begin
          Engine.Close (C); Staging.Close (Hold); MC_Store.Close (Store);
@@ -247,7 +317,7 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
         or else P.Changes (1).After.GID /= Word (MC_Posix.Egid)) then Status := Denied; end if;
       if Status = OK then Read_Manifest (Store, After, M, Status); end if;
       if Status = OK then GM.Check_Retention (Store, M, Deadline, Status); end if;
-      if Status = OK and then M.Format /= GM.Intent_V3 then Status := Unsupported; end if;
+      if Status = OK and then M.Format /= GM.Supply_V4 then Status := Unsupported; end if;
       if Status = OK and then (M.Effect_Contract /= P.Effect_Contract or else M.Epoch /= P.Epoch or else M.Fence /= P.Fence
         or else M.Transaction_ID = P.Transaction_ID) then Status := Denied; end if;
       if Status = OK then Read_State (Root, State, P.Root_ID, RS, Status); end if;
@@ -277,10 +347,8 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
          if Status = OK then GM.Check_Retention (Store, Baseline, Deadline, Status); end if;
          if Status = OK then Before_Closure := Baseline.Catalog_Closure; end if;
       end if;
-      if Status = OK then
-         Pkg_Generation_Intent.Verify (Store, M.Intent, P.Root_ID, Before, Before_Closure,
-            M.Catalog, M.Catalog_Closure, Deadline, Native_Binding, Status);
-      end if;
+      Recorded := RS.Active_Transaction = P.Transaction_ID or else
+        (RS.Generation = P.Target_Generation and then RS.Accepted_Plan = Expected_Plan);
       Encoded := new Bytes (1 .. Pkg_File_Plan.Max_Plan_Bytes);
       if Status = OK then Pkg_File_Plan.Encode (P.all, Encoded.all, Used, Status); end if;
       MC_Store.Close (Store); MC_FS.Close (Root_Lock);
@@ -291,13 +359,20 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       if Status = OK then Engine.Open (Root_Path, State_Path, Store_Path, P.Root_ID, C, Status); end if;
       if Status = OK and then (Engine.Generation (C) /= RS.Generation or else Engine.Accepted_Plan (C) /= RS.Accepted_Plan
         or else Engine.Has_Active_Change (C) /= (RS.Active_Transaction /= Zero_Identity)) then Status := Stale; end if;
+      if Status = OK then Revalidate (C, Status); end if;
       if Status /= OK then Done; return; end if;
       if RS.Generation = P.Target_Generation then
          Engine.Resume_Recorded (C, Expected_Plan, Status);
          if Status = OK then Engine.Reconcile_Terminal (C, Status); end if;
       else
          if Engine.Has_Active_Change (C) then Engine.Resume_Recorded (C, Expected_Plan, Status);
-         else Engine.Prepare (C, Encoded (1 .. Used), Expected_Plan, Status); end if;
+         else
+            Engine.Prepare (C, Encoded (1 .. Used), Expected_Plan, Status);
+            -- The engine has now durably admitted this exact plan. Later work
+            -- uses current managed policy while preserving the admitted supply
+            -- observation; expiry alone does not turn recovery into new work.
+            if Status = OK then Recorded := True; end if;
+         end if;
          if Status = OK then Pkg_Recovery_Audit.Inspect (State_Path, Store_Path, Expected_Plan, Audit, Status); end if;
          if Status = OK then
             case Audit.Log_State.Phase is
@@ -309,6 +384,10 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
          if Status = OK then Engine.Commit (C, Health_Receipt, Status); end if;
       end if;
       Done;
+      -- A durable decision may already exist when the deadline is exceeded.
+      -- Never return a timely success for late I/O; callers must inspect/resume
+      -- the recorded plan, not infer that a non-OK result means no effects.
+      if Status = OK then Time_Left (Status); end if;
    exception when others => Done; Status := Indeterminate;
    end Publish;
 end Pkg_Generation_Publisher;

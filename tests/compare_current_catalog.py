@@ -12,6 +12,8 @@ import hashlib
 import json
 from pathlib import Path
 import struct
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey, Ed25519PrivateKey
+from cryptography.hazmat.primitives import serialization
 from compare_catalog_store import reference
 from compare_catalog_retention import objects
 from compare_selected_catalog import original as read_original
@@ -47,11 +49,11 @@ def check(root, state, cas, bank, media, native):
     before, after = descriptor(cas,before_hash), descriptor(cas,after_hash)
     assert after['previous'] == before_hash and before['previous'] == bytes(32)
     assert after['catalog'] == raw[112:144] == plan[72:104]
-    expected = {}; closures = {}; missing = Counter(); sources = {}; retained_hashes = {}; intents = {}
+    expected = {}; closures = {}; missing = Counter(); sources = {}; retained_hashes = {}; intents = {}; handoff_expected = set()
     for d, name, generation in [(before,'empty.deb',1),(after,'consumer-upgrade.deb',2)]:
         assert d['root'] == root_id and d['generation'] == generation
         manifest = cas_read(cas,d['manifest'])
-        assert len(manifest) == 256 and manifest[:8] == b'NIAGEN03'
+        assert len(manifest) == 288 and manifest[:8] == b'NIAGEN04'
         assert manifest[8:24] == d['stage'] and manifest[56:88] == d['catalog']
         index, frame = reference(media,[name]); assert sha(frame) == d['catalog']
         assert cas_read(cas,d['catalog']) == frame
@@ -69,15 +71,39 @@ def check(root, state, cas, bank, media, native):
         assert intent[184:192] == struct.pack('>II', 5, 1)
         assert intent[192:] == b'amd64' + struct.pack('>I', 5) + b'amd64'
         intents[generation] = dict(hash=intent_hash.hex(), native_result=intent[120:152].hex(), binding=intent[152:184].hex())
+        supply_policy_hash = manifest[192:224]; supply_policy = cas_read(cas, supply_policy_hash)
+        assert len(supply_policy) == 136 and supply_policy[:8] == b'NIASPOL1' and u64(supply_policy,48) == 1
+        expected_key = Ed25519PrivateKey.from_private_bytes(bytes([1])*32).public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        assert supply_policy[56:88] == bytes([71])*32 and supply_policy[88:120] == expected_key
+        assert u64(supply_policy,40) == (1000 if generation == 1 else 2000)
+        supply_map_hash = supply_policy[8:40]; supply_map = cas_read(cas, supply_map_hash)
+        assert len(supply_map) == 256 and supply_map[:8] == b'NIASMAP1'
+        before_closure = bytes(32) if generation == 1 else bytes.fromhex(closures[1]['hash'])
+        assert supply_map[:160] == b'NIASMAP1' + root_id + d['previous'] + before_closure + d['catalog'] + sha(closure) + number(1)
+        assert supply_map[160:224] == frame[56:88] + frame[120:152]
+        supply_receipt_hash = supply_map[224:256]; supply_receipt = cas_read(cas,supply_receipt_hash)
+        assert len(supply_receipt) == 320 and supply_receipt[:8] == b'NIASUP01'
+        assert supply_receipt[8:40] == supply_policy[56:88] and supply_receipt[72:136] == frame[56:88] + frame[120:152]
+        assert u64(supply_receipt,232) == u64(supply_policy,120) == 7
+        assert u64(supply_policy,40) == u64(supply_receipt,240) and u64(supply_policy,128) == 600
+        assert u64(supply_receipt,248) == u64(supply_policy,40) + 600
+        domain = b'NiaOS/archive-supply/v1'
+        Ed25519PublicKey.from_public_bytes(supply_policy[88:120]).verify(
+            supply_receipt[256:], struct.pack('>H',len(domain))+domain+supply_receipt[:256])
+        for pos in range(40,232,32): cas_read(cas,supply_receipt[pos:pos+32])
+        health = manifest[256:288]
+        assert supply_receipt[40:72] == supply_receipt[136:168] == supply_receipt[168:200] == supply_receipt[200:232] == health
+        if generation == 1: handoff_expected = {supply_policy_hash.hex(), supply_map_hash.hex(), intent_hash.hex()}
         package, relationships, atoms = read_original(media/name)
         assert not atoms and all(int(row[2]) == 0 for row in relationships)
         sources[d['catalog'].hex()] = package
         retained_hashes[generation] = [sha(closure).hex(), *[h.hex() for h in retained]]
         for phase in range(5 if generation == 2 else 4):
-            missing.update((str(phase), digest.hex()) for digest in [sha(closure), intent_hash, *retained])
-        batch = cas_read(cas,manifest[192:224])
+            missing.update((str(phase), digest.hex()) for digest in [sha(closure), intent_hash, supply_policy_hash, supply_map_hash, supply_receipt_hash, health, *retained])
+        batch = cas_read(cas,manifest[224:256])
         assert batch[:8] == b'MCPLAN02' and batch[8:24] == d['stage']
-        assert batch[24:40] == sha(b'NIAGEN03' + manifest[24:40] + struct.pack('>I',1))[:16]
+        assert batch[24:40] == sha(b'NIAGEN04' + manifest[24:40] + struct.pack('>I',1))[:16]
         assert batch[72:104] == d['catalog']
         stage_root = bank/d['stage'].hex()/'root'
         assert (stage_root/'catalog').read_bytes() == frame
@@ -140,13 +166,16 @@ def check(root, state, cas, bank, media, native):
     assert all(len(row) == 2 and row[1] != 'OK' for row in rejected)
     refused_publications = [line.split()[1:] for line in lines if line.startswith('INTENT_PUBLICATION ')]
     assert sorted(refused_publications) == [['DAMAGED_RESULT', 'CONFLICT'], ['FALSE_INITIAL', 'DENIED'], ['WRONG_ROOT', 'DENIED']]
+    handoff = [line.split()[1:] for line in lines if line.startswith('HANDOFF_MISSING ')]
+    assert len(handoff) == 3 and {row[0] for row in handoff} == handoff_expected
+    assert all(len(row) == 2 and row[1] not in {'OK', 'CONFLICT'} for row in handoff)
     update_missing = [line.split()[1:] for line in lines if line.startswith('UPDATE_MISSING ')]
     assert all(len(row) == 2 and row[1] not in {'OK', 'CONFLICT'} for row in update_missing)
     assert Counter(row[0] for row in update_missing) == Counter(retained_hashes[2])
     return dict(result='pass-for-two-published-native-catalog-observations',root=root_id.hex(),accepted_plan=raw[80:112].hex(),
                 observations=len(rows),missing_retention_checks=len(faults),generations=[dict(generation=g,descriptor=v[0],catalog=v[2],payload=v[3],claims=int(v[5]),retention=closures[g]) for g,v in expected.items()],
                 update_observations=len(updates),update_bindings=bindings,missing_update_objects=len(update_missing),
-                publication_intents=intents,intent_reject_cases=len(rejected),intent_publication_rejections=len(refused_publications),
+                handoff_missing_checks=len(handoff),publication_intents=intents,intent_reject_cases=len(rejected),intent_publication_rejections=len(refused_publications),
                 physical_deb_payload_applied=False,production_authorization=False)
 
 if __name__ == '__main__':

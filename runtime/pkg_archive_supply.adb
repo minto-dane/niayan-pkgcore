@@ -8,9 +8,9 @@ package body Pkg_Archive_Supply with SPARK_Mode => Off is
    Max_Integer : constant Counter := 2 ** 53 - 1;
    type Observation_Access is access Pkg_Deb_Metadata.Observation;
    procedure Free is new Ada.Unchecked_Deallocation (Pkg_Deb_Metadata.Observation, Observation_Access);
-   procedure Verify_Original (Store : in out MC_Store.Store;
+   procedure Check_Original (Store : in out MC_Store.Store;
       Receipt, Original, Control : Digest; Trusted : Authority;
-      Now, Deadline : Counter; Binding : out Digest; Status : out Outcome) is
+      Now, Deadline : Counter; Historical : Boolean; Binding : out Digest; Status : out Outcome) is
       Wire : Bytes (1 .. Wire_Size); Used : Natural;
       Started, Finished, Epoch, Checked, Expires, Elapsed : Counter;
       Observed : Observation_Access := null;
@@ -68,7 +68,7 @@ package body Pkg_Archive_Supply with SPARK_Mode => Off is
       -- Ceiling without overflow; Now is a seconds observation taken at entry.
       Elapsed := (Finished - Started) / 1_000;
       if (Finished - Started) mod 1_000 /= 0 then Elapsed := Elapsed + 1; end if;
-      if Elapsed >= Expires - Now or else Elapsed > Trusted.Maximum_Age - (Now - Checked) then
+      if not Historical and then (Elapsed >= Expires - Now or else Elapsed > Trusted.Maximum_Age - (Now - Checked)) then
          Status := Stale; raise Interrupted;
       end if;
       Binding := Receipt; Status := OK; Free (Observed);
@@ -76,5 +76,17 @@ package body Pkg_Archive_Supply with SPARK_Mode => Off is
       when Interrupted => MC_FS.Close (File); Free (Observed); Binding := Zero_Digest;
       when Storage_Error => MC_FS.Close (File); Free (Observed); Binding := Zero_Digest; Status := Exhausted;
       when others => MC_FS.Close (File); Free (Observed); Binding := Zero_Digest; Status := Indeterminate;
+   end Check_Original;
+   procedure Verify_Original (Store : in out MC_Store.Store;
+      Receipt, Original, Control : Digest; Trusted : Authority;
+      Now, Deadline : Counter; Binding : out Digest; Status : out Outcome) is
+   begin
+      Check_Original (Store, Receipt, Original, Control, Trusted, Now, Deadline, False, Binding, Status);
    end Verify_Original;
+   procedure Recheck_Original (Store : in out MC_Store.Store;
+      Receipt, Original, Control : Digest; Trusted : Authority;
+      Observed_At, Deadline : Counter; Binding : out Digest; Status : out Outcome) is
+   begin
+      Check_Original (Store, Receipt, Original, Control, Trusted, Observed_At, Deadline, True, Binding, Status);
+   end Recheck_Original;
 end Pkg_Archive_Supply;

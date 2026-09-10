@@ -6,7 +6,7 @@ with MC_Clock; with MC_Codec; with MC_FS; with MC_Hex; with MC_Posix; with MC_Ru
 with MC_SHA256; with MC_Store; with MC_Types; use MC_Types;
 with Pkg_Archive_Supply; with Pkg_Catalog_Retention; with Pkg_Catalog_Store;
 with Pkg_Deb_Metadata; with Pkg_Deb_Payload; with Pkg_Generation_Descriptor;
-with Pkg_Payload_Index; with Pkg_Selected_Catalog; with Pkg_Supply_Map;
+with Pkg_Payload_Index; with Pkg_Selected_Catalog; with Pkg_Supply_Map; with Pkg_Supply_Policy;
 with Test_Support; use Test_Support;
 procedure Run_Supply_Map_Tests with SPARK_Mode => Off is
    package M renames Pkg_Supply_Map; package C renames Pkg_Selected_Catalog;
@@ -102,6 +102,66 @@ procedure Run_Supply_Map_Tests with SPARK_Mode => Off is
       MC_Store.Put (Store, GD.Encode (Target.Before), Other, Status); Need ("retained predecessor fixture");
       Target.Before_Closure := Value.Closure;
    end Before;
+   procedure Check_Policy is
+      package P renames Pkg_Supply_Policy;
+      Value : P.Snapshot; Good, Bad : Digest; N : Natural;
+      Frame, Damaged : Bytes (1 .. P.Max_Bytes + 1);
+      High : M.Authorities (Positive'Last .. Positive'Last) := (others => Trusted (1));
+   begin
+      P.Prepare (Store, Initial_Map, Target, High, Now, Deadline, Good, Until_Time, Status); Need ("policy highest array bound");
+      P.Load (Store, Good, Deadline, Value, Status); Need ("canonical policy load");
+      Expect (Value.Map = Initial_Map and then Value.Observed_At = Now and then Value.Count = 1, "retained policy subject");
+      P.Prepare (Store, Initial_Map, Target, Trusted, Now, Deadline, Bad, Until_Time, Status); Need ("policy deterministic preparation");
+      Expect (Bad = Good, "policy ignores external array bounds");
+      P.Verify_New (Store, Good, Target, Trusted, Now, Deadline, Until_Time, Status); Need ("independent fresh policy");
+      P.Verify_New (Store, Good, Target, Trusted, Now + 600, Deadline, Until_Time, Status);
+      Expect (Status = Stale and then Until_Time = 0, "expired receipt cannot admit a new plan");
+      P.Recheck_Recorded (Store, Good, Target, Trusted, Now + 600, Deadline, Status); Need ("recorded signature observation survives UTC expiry");
+      P.Check_Retention (Store, Good, Target.Catalog, Target.Closure, Deadline, Status); Need ("policy roots complete map retention");
+      P.Verify_New (Store, Good, Target, No_Trust, Now, Deadline, Until_Time, Status);
+      Expect (Status = Denied and then Until_Time = 0, "stored keys never grant fresh trust");
+      P.Recheck_Recorded (Store, Good, Target, No_Trust, Now + 600, Deadline, Status);
+      Expect (Status = Denied, "recorded keys still require independent current trust");
+      for D of Counter_Array'(0, Counter'Last) loop
+         P.Recheck_Recorded (Store, Good, Target, Trusted, Now + 600, D, Status);
+         Expect (Status /= OK, "historical check still has a live I/O deadline");
+      end loop;
+      MC_Store.Read_Object (Store, Good, Frame, N, Status); Need ("policy framing");
+      Expect (N = P.Header_Size + P.Entry_Size, "canonical policy length");
+      for I in 1 .. N loop
+         Damaged := Frame; Damaged (I) := Damaged (I) xor 1;
+         MC_Store.Put (Store, Damaged (1 .. N), Bad, Status); Need ("retain changed policy");
+         P.Verify_New (Store, Bad, Target, Trusted, Now, Deadline, Until_Time, Status);
+         Expect (Status /= OK and then Until_Time = 0, "mutated policy never authenticates itself");
+      end loop;
+      for Size in N - 1 .. N + 1 loop
+         if Size /= N then
+            MC_Store.Put (Store, Frame (1 .. Size), Bad, Status); Need ("retain noncanonical policy length");
+            P.Load (Store, Bad, Deadline, Value, Status);
+            Expect (Status /= OK and then Value.Map = Zero_Digest and then Value.Count = 0, "policy load clears malformed output");
+         end if;
+      end loop;
+      declare
+         Pair : M.Authorities (5 .. 6) := (others => Trusted (1)); Swap : Pkg_Archive_Supply.Authority;
+         First, Second : Digest; Excess : M.Authorities (1 .. M.Max_Authorities + 1) := (others => Trusted (1));
+      begin
+         Pair (5).Scope := (others => 103);
+         P.Prepare (Store, Initial_Map, Target, Pair, Now, Deadline, First, Until_Time, Status); Need ("unordered full independent policy");
+         Swap := Pair (5); Pair (5) := Pair (6); Pair (6) := Swap;
+         P.Prepare (Store, Initial_Map, Target, Pair, Now, Deadline, Second, Until_Time, Status); Need ("canonical full independent policy");
+         Expect (First = Second, "policy source ordering does not affect bytes");
+         P.Verify_New (Store, First, Target, Pair, Now, Deadline, Until_Time, Status); Need ("canonical policy matches reordered current authority");
+         Pair (6) := Pair (5);
+         P.Prepare (Store, Initial_Map, Target, Pair, Now, Deadline, Bad, Until_Time, Status);
+         Expect (Status = Conflict and then Bad = Zero_Digest and then Until_Time = 0, "duplicate policy scope rejected");
+         P.Prepare (Store, Initial_Map, Target, Excess, Now, Deadline, Bad, Until_Time, Status);
+         Expect (Status = Invalid_Input and then Bad = Zero_Digest and then Until_Time = 0, "oversized authority policy bounded before I/O");
+      end;
+      M.Verify_Interval (Store, Initial_Map, Target, Trusted, Now - 1, Now, Deadline, Until_Time, Status);
+      Expect (Status = Stale and then Until_Time = 0, "fresh plan cannot invent an earlier observation");
+      M.Verify_Interval (Store, Initial_Map, Target, Trusted, Now + 1, Now, Deadline, Until_Time, Status);
+      Expect (Status = Invalid_Input and then Until_Time = 0, "future retained observation refused at entry");
+   end Check_Policy;
    procedure External_Fixture is
       procedure Read_Input (Name : String; Hash : out Digest) is
       begin
@@ -137,7 +197,19 @@ begin
       M.Verify (Store, Zero_Digest, Target, No_Trust, 0, 0, Until_Time, Status);
       Expect (Status = Denied and then Until_Time = 0, "root verify refused before store");
       M.Check_Retention (Store, Zero_Digest, Zero_Digest, Zero_Digest, 0, Status);
-      Expect (Status = Denied, "root retention refused before store"); Report; return;
+      Expect (Status = Denied, "root retention refused before store");
+      declare Value : Pkg_Supply_Policy.Snapshot; begin
+         Pkg_Supply_Policy.Prepare (Store, Address, Target, Trusted, 1, 1, Address, Until_Time, Status);
+         Expect (Status = Denied and then Address = Zero_Digest and then Until_Time = 0, "root policy preparation refused");
+         Pkg_Supply_Policy.Load (Store, Address, 1, Value, Status);
+         Expect (Status = Denied and then Value.Map = Zero_Digest, "root policy read refused");
+         Pkg_Supply_Policy.Verify_New (Store, Address, Target, Trusted, 1, 1, Until_Time, Status);
+         Expect (Status = Denied and then Until_Time = 0, "root policy admission refused");
+         Pkg_Supply_Policy.Recheck_Recorded (Store, Address, Target, Trusted, 1, 1, Status);
+         Expect (Status = Denied, "root historical policy refused");
+         M.Recheck_At (Store, Address, Target, Trusted, 1, 1, Status);
+         Expect (Status = Denied, "root historical map refused");
+      end; Report; return;
    end if;
    MC_Store.Initialize (Ada.Command_Line.Argument (1), Store, Status); Need ("private CAS");
    MC_FS.Open_Root (Ada.Directories.Full_Name (Ada.Command_Line.Argument (2)), Media, Status); Need ("media");
@@ -152,7 +224,7 @@ begin
    for I in Upstream'Range loop MC_Store.Put (Store, (1 => Byte (I)), Upstream (I), Status); Need ("opaque upstream fixture"); end loop;
    Import ("empty.deb", Rows (1)); Import ("library-amd64.deb", Rows (2));
    Target.Root_ID := (others => 104); Catalog (Rows (1 .. 1)); Initial := Target;
-   Prepare (Rows (1 .. 1)); Initial_Map := Address;
+   Prepare (Rows (1 .. 1)); Initial_Map := Address; Check_Policy;
    Prepare (Rows (1 .. 1)); Expect (Address = Initial_Map, "same inputs reproduce canonical map");
    Reject_Items (Nothing, "initial construction cannot omit its original");
    Reject_Items (Rows (2 .. 2), "same count wrong original rejected");

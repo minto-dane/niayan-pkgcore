@@ -2,13 +2,18 @@
 with MC_Types; use MC_Types;
 with Pkg_Managed_Engine; with Pkg_Generation_Descriptor;
 with Pkg_Selected_Catalog; with Pkg_Payload_Index;
-with Pkg_Deb_Final_Set; with Pkg_Deb_Transition;
+with Pkg_Deb_Final_Set; with Pkg_Deb_Transition; with Pkg_Supply_Policy;
 generic
    with package Managed is new Pkg_Managed_Engine (<>);
    with procedure Authorize_Stage
      (Manifest, Plan, Evidence : Digest; Stage_ID, Transaction_ID : Identity;
       Epoch, Fence : Counter; Phase : String; Status : out Outcome);
    with procedure Authorize_Bootstrap (Root_ID : Identity; Grant : Digest; Status : out Outcome);
+   with procedure Observe_Supply (Root_ID, Transaction_ID : Identity; Plan, Policy : Digest;
+      Value : out Pkg_Supply_Policy.Snapshot; Status : out Outcome);
+   -- Independent current protected scope/key/floor/age policy and UTC sample;
+   -- Value.Map is the exact map bound to the expected authenticated plan. Rows
+   -- must be scope-sorted. Never copy keys/time from an untrusted stored policy.
 package Pkg_Generation_Publisher with SPARK_Mode => Off is
    procedure Provision (Root_Path, State_Path : String; Root_ID : Identity;
       Bootstrap_Grant : Digest; Status : out Outcome);
@@ -39,14 +44,18 @@ package Pkg_Generation_Publisher with SPARK_Mode => Off is
    -- This is planning evidence, not supply authentication, a phase schedule or
    -- execution permission. Locks are released on return. Admission must validate
    -- policy, effects and this exact predecessor under its own live reservation.
-   -- Publish requires a v3 manifest carrying a retained native intent. The intent
+   -- Publish requires a v4 manifest carrying native intent and supply policy. The intent
    -- is bound through manifest/descriptor to the physical plan checked by the
    -- existing managed authority. Native dependencies, protection and the exact
    -- predecessor are revalidated from originals before any publication effect.
    -- Initial construction requires the actual initial root state and a checked
    -- native endpoint; an ordinary intent cannot bypass baseline protections.
-   -- Native reads accept retained v2/v3; v1 remains metadata-only. Publish rejects
-   -- v1/v2 plans, including their replay: legacy recovery needs its retained
+   -- New admission verifies current supply across the retained observation and
+   -- current UTC time. Recorded recovery first audits the exact active/accepted
+   -- root.state and journal; only then may receipt time be rechecked historically.
+   -- Independent current keys/floors/ages and all managed guards still apply.
+   -- Native reads accept retained v2/v3/v4; v1 remains metadata-only. Publish rejects
+   -- v1/v2/v3 plans, including their replay: legacy recovery needs its retained
    -- implementation before migration. There is no policy-free fallback path.
    -- Publish requires a finite deadline and checks it in the composed guard.
    -- Reobserves the accepted native catalog and payload while holding the same

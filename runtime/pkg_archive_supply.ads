@@ -13,6 +13,13 @@ package Pkg_Archive_Supply with SPARK_Mode => Off is
    procedure Verify_Original (Store : in out MC_Store.Store;
       Receipt, Original, Control : Digest; Trusted : Authority;
       Now, Deadline : Counter; Binding : out Digest; Status : out Outcome);
+   procedure Recheck_Original (Store : in out MC_Store.Store;
+      Receipt, Original, Control : Digest; Trusted : Authority;
+      Observed_At, Deadline : Counter; Binding : out Digest; Status : out Outcome);
+   -- Historical cryptographic/native recheck at a recorded observation, with a
+   -- live I/O deadline. This does NOT establish current trust or grant admission.
+   -- The caller must authenticate the retained policy/time through an already
+   -- admitted plan. New transactions must use Verify_Original and current policy.
    -- NIASUP01: tag[8], scope/policy/original/raw-control/InRelease/Packages/
    -- keyring digests[7*32], security epoch/checked-at/expires[u64 BE each],
    -- Ed25519 signature[64]. MC_Authentic domain is NiaOS/archive-supply/v1.

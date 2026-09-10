@@ -103,7 +103,8 @@ package body Pkg_Supply_Map with SPARK_Mode => Off is
    exception when others => MC_FS.Close (File); Status := Indeterminate;
    end Receipt_References;
    procedure Evaluate (Store : in out MC_Store.Store; Target : Context; Items : Sources;
-      Trusted : Authorities; Now, Deadline : Counter; Valid_Until : out Counter; Status : out Outcome) is
+      Trusted : Authorities; Observed_At, Now, Deadline : Counter; Historical : Boolean;
+      Valid_Until : out Counter; Status : out Outcome) is
       Old, After : C.Catalog; Payload : Pkg_Payload_Index.Index;
       Previous, Bound : Digest := Zero_Digest; Old_Item, Item : C.Package_Record;
       Wire : Bytes (1 .. Supply.Wire_Size); Started, Boot, Current, Elapsed, Until_Time : Counter := 0;
@@ -117,14 +118,14 @@ package body Pkg_Supply_Map with SPARK_Mode => Off is
          if Boot < Started then Status := Stale; raise Interrupted; end if;
          Elapsed := (Boot - Started) / 1_000;
          if (Boot - Started) mod 1_000 /= 0 then Elapsed := Elapsed + 1; end if;
-         if Elapsed > Max_Integer - Now then Status := Stale; raise Interrupted; end if;
-         Current := Now + Elapsed;
+         if not Historical and then Elapsed > Max_Integer - Now then Status := Stale; raise Interrupted; end if;
+         Current := (if Historical then Now else Now + Elapsed);
          if Until_Time /= 0 and then Current >= Until_Time then Status := Stale; raise Interrupted; end if;
       end Clock;
    begin
       Valid_Until := 0; Status := Invalid_Input;
       if not Valid (Target) or else Items'Length > Max_Entries or else Trusted'Length > Max_Authorities
-        or else Now not in 1 .. Max_Integer then return; end if;
+        or else Now not in 1 .. Max_Integer or else Observed_At not in 1 .. Now then return; end if;
       Tick (Deadline, Status); Check; MC_Clock.Boottime_Milliseconds (Started, Status); Check;
       for I in Trusted'Range loop
          if Trusted (I).Scope = Zero_Digest or else Is_Zero (Trusted (I).Key)
@@ -152,8 +153,15 @@ package body Pkg_Supply_Map with SPARK_Mode => Off is
          end loop;
          if Which = 0 then Status := Denied; raise Interrupted; end if;
          Clock;
-         Supply.Verify_Original (Store, Source_Item.Receipt, Source_Item.Original, Source_Item.Control,
-            Trusted (Which), Current, Deadline, Bound, Status); Check;
+         if Counter (MC_Codec.U64 (Wire, 241)) > Observed_At then Status := Stale; raise Interrupted; end if;
+         if Historical then
+            Supply.Recheck_Original (Store, Source_Item.Receipt, Source_Item.Original, Source_Item.Control,
+               Trusted (Which), Current, Deadline, Bound, Status);
+         else
+            Supply.Verify_Original (Store, Source_Item.Receipt, Source_Item.Original, Source_Item.Control,
+               Trusted (Which), Current, Deadline, Bound, Status);
+         end if;
+         Check;
          if Bound /= Source_Item.Receipt then Status := Corrupt; raise Interrupted; end if;
          declare
             Expires : constant Counter := Counter'Min (Counter (MC_Codec.U64 (Wire, 249)),
@@ -200,7 +208,7 @@ package body Pkg_Supply_Map with SPARK_Mode => Off is
    begin
       Address := Zero_Digest; Valid_Until := 0; Status := Denied; if MC_Posix.Euid = 0 then return; end if;
       MC_Clock.Boottime_Milliseconds (Started, Status); if Status /= OK then return; end if;
-      Evaluate (Store, Target, Items, Trusted, Now, Deadline, Valid_Until, Status);
+      Evaluate (Store, Target, Items, Trusted, Now, Now, Deadline, False, Valid_Until, Status);
       if Status /= OK then return; end if;
       Wire := new Bytes (1 .. Header_Size + Entry_Size * Items'Length);
       Wire (1 .. Header_Size) := Header (Target, Items'Length); Pos := Header_Size;
@@ -220,12 +228,14 @@ package body Pkg_Supply_Map with SPARK_Mode => Off is
       when Storage_Error => Free (Wire); Address := Zero_Digest; Valid_Until := 0; Status := Exhausted;
       when others => Free (Wire); Address := Zero_Digest; Valid_Until := 0; Status := Indeterminate;
    end Prepare;
-   procedure Verify (Store : in out MC_Store.Store; Address : Digest; Target : Context;
-      Trusted : Authorities; Now, Deadline : Counter; Valid_Until : out Counter; Status : out Outcome) is
+   procedure Check_Map (Store : in out MC_Store.Store; Address : Digest; Target : Context;
+      Trusted : Authorities; Observed_At, Now, Deadline : Counter; Historical : Boolean;
+      Valid_Until : out Counter; Status : out Outcome) is
       Wire : Buffer_Access := null; Count, Pos : Natural; Started, Current : Counter;
    begin
       Valid_Until := 0; Status := Denied; if MC_Posix.Euid = 0 then return; end if;
-      if not Valid (Target) then Status := Invalid_Input; return; end if;
+      if not Valid (Target) or else Now not in 1 .. Max_Integer or else Observed_At not in 1 .. Now
+      then Status := Invalid_Input; return; end if;
       MC_Clock.Boottime_Milliseconds (Started, Status); if Status /= OK then return; end if;
       Read (Store, Address, Deadline, Wire, Count, Status);
       if Status = OK and then Wire (1 .. Header_Size) /= Header (Target, Count) then Status := Conflict; end if;
@@ -236,15 +246,35 @@ package body Pkg_Supply_Map with SPARK_Mode => Off is
                Item := (Wire (Pos + 1 .. Pos + 32), Wire (Pos + 33 .. Pos + 64), Wire (Pos + 65 .. Pos + 96));
                Pos := Pos + Entry_Size;
             end loop;
-            Current_Time (Now, Started, Deadline, Current, Status);
-            if Status = OK then Evaluate (Store, Target, Items, Trusted, Current, Deadline, Valid_Until, Status); end if;
+            if Historical then Current := Now; Tick (Deadline, Status);
+            else Current_Time (Now, Started, Deadline, Current, Status); end if;
+            if Status = OK then
+               Evaluate (Store, Target, Items, Trusted, Observed_At, Current, Deadline, Historical, Valid_Until, Status);
+            end if;
          end;
       end if;
       Free (Wire);
    exception
       when Storage_Error => Free (Wire); Valid_Until := 0; Status := Exhausted;
       when others => Free (Wire); Valid_Until := 0; Status := Indeterminate;
+   end Check_Map;
+   procedure Verify (Store : in out MC_Store.Store; Address : Digest; Target : Context;
+      Trusted : Authorities; Now, Deadline : Counter; Valid_Until : out Counter; Status : out Outcome) is
+   begin
+      Check_Map (Store, Address, Target, Trusted, Now, Now, Deadline, False, Valid_Until, Status);
    end Verify;
+   procedure Verify_Interval (Store : in out MC_Store.Store; Address : Digest; Target : Context;
+      Trusted : Authorities; Observed_At, Now, Deadline : Counter;
+      Valid_Until : out Counter; Status : out Outcome) is
+   begin
+      Check_Map (Store, Address, Target, Trusted, Observed_At, Now, Deadline, False, Valid_Until, Status);
+   end Verify_Interval;
+   procedure Recheck_At (Store : in out MC_Store.Store; Address : Digest; Target : Context;
+      Trusted : Authorities; Observed_At, Deadline : Counter; Status : out Outcome) is
+      Ignored : Counter;
+   begin
+      Check_Map (Store, Address, Target, Trusted, Observed_At, Observed_At, Deadline, True, Ignored, Status);
+   end Recheck_At;
    procedure Check_Retention (Store : MC_Store.Store; Address, Catalog, Closure : Digest;
       Deadline : Counter; Status : out Outcome) is
       Wire : Buffer_Access := null; Receipt : Bytes (1 .. Supply.Wire_Size); Count, Pos : Natural;

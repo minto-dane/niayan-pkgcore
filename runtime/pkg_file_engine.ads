@@ -14,6 +14,13 @@ package Pkg_File_Engine with SPARK_Mode => Off is
    procedure Provision(Root_Path, State_Path : String; Root_ID : Identity; Status : out Outcome);
    procedure Open(Root_Path, State_Path, Store_Path : String; Root_ID : Identity;
                   C : in out Context; Status : out Outcome);
+   generic
+      with procedure Validate (Store : in out MC_Store.Store; Status : out Outcome);
+   procedure Check_Inputs (C : in out Context; Status : out Outcome);
+   -- Revalidate retained native inputs after the engine acquired its actual
+   -- root/CAS reservation, before loading/admitting a plan. Validate must not
+   -- close or transfer Store. No permission or transaction is created by this
+   -- check; normal mandatory guards still authorize every subsequent effect.
    procedure Prepare(C : in out Context; Encoded_Plan : Bytes;
                      Expected_Digest : Digest; Status : out Outcome);
    procedure Resume(C : in out Context; Status : out Outcome);

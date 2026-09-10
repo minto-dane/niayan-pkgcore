@@ -84,6 +84,14 @@ package body Pkg_File_Engine with SPARK_Mode => Off is
       C.Opened:=True; C.Poisoned:=False;
    exception when others => Close(C); Status:=IO_Error;
    end Open;
+   procedure Check_Inputs (C : in out Context; Status : out Outcome) is
+   begin
+      Status := Invalid_Input;
+      if not C.Opened or else C.Poisoned or else C.Plan /= null then return; end if;
+      Validate (C.Store, Status);
+      if Status = Indeterminate then C.Poisoned := True; end if;
+   exception when others => C.Poisoned := True; Status := Indeterminate;
+   end Check_Inputs;
    procedure Capture(C : in out Context; Path : String; Save : Boolean;
                       S : out Shape; Status : out Outcome) is
       V, Opened, Observed_After : MC_FS.Entry_Info; F : MC_FS.File; B : Bytes(1..MC_FS.Max_Xattr_Bytes);

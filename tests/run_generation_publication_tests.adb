@@ -13,6 +13,7 @@ with MC_Types; use MC_Types;
 with Pkg_Catalog_Retention; with Pkg_Catalog_Store; with Pkg_Deb_Metadata; with Pkg_Deb_Payload;
 with Pkg_Payload_Index; with Pkg_Selected_Catalog;
 with Pkg_Deb_Final_Set; with Pkg_Deb_Transition;
+with Pkg_Archive_Supply; with Pkg_Supply_Map; with Pkg_Supply_Policy;
 with Pkg_File_Plan; with Pkg_Generation_Descriptor; with Pkg_Generation_Manifest; with Pkg_Generation_Intent;
 with Pkg_Generation_Publisher; with Pkg_Generation_Stage; with Pkg_Managed_Engine; with Pkg_Root_State;
 with Resolver_Model; with Resolver_Admission; with Resolver_Wire;
@@ -38,14 +39,16 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    M : GM.Manifest; Manifest_Hash, Attrs, Catalog, Receipt, Plan_Hash, Ignored : Digest;
    Before, After, Current, Decoded, Other : GD.Descriptor;
    Observed_Catalog : NC.Catalog; Observed_Payload : PX.Index;
+   Catalog_Control : Digest := Zero_Digest;
    Catalog_Original : Digest := Zero_Digest; Catalog_Size : Counter := 3;
    Observation_Deadline : Counter := 0;
    Enabled : Pkg_Deb_Final_Set.Architecture_List (1 .. 1);
    Update_Current : GD.Descriptor; Update_Plan : DT.Plan;
    Update_Binding, First_Closure : Digest := Zero_Digest;
    Update_Issue : DT.Finding; Update_Status : Outcome;
-   Fixture_Path : constant String := (if Ada.Command_Line.Argument_Count = 5 then Ada.Command_Line.Argument (5)
+   Fixture_Path : constant String := (if Ada.Command_Line.Argument_Count >= 5 then Ada.Command_Line.Argument (5)
       else Ada.Directories.Current_Directory & "/tests/fixtures/selected-catalog");
+   Laboratory : constant Boolean := Ada.Command_Line.Argument_Count >= 6;
    First_Plan : Digest; First_Tx : Identity;
    type Plan_Access is access FP.Plan;
    P, Batch : constant Plan_Access := new FP.Plan;
@@ -61,7 +64,7 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    Bank : constant String := Ada.Command_Line.Argument (4);
    type Fault is (None, Authority_Denied, Barrier_Expired, Signature_Damaged,
       Configuration_Stale, Coverage_Missing, Admission_Stale, Native_Denied,
-      Current_Changed, Commit_Denied, Stage_Denied, Bootstrap_Denied);
+      Current_Changed, Commit_Denied, Stage_Denied, Bootstrap_Denied, Supply_Denied, Supply_Key_Changed, Supply_Floor_Changed);
    Inject : Fault := None;
    Native_Calls, Recheck_Calls, Config_Calls : Natural := 0;
    Probed : Boolean := False;
@@ -80,6 +83,11 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    end Await_Deadline;
    procedure Probe_Reservations;
    SK1, SK2 : Bytes (1 .. 64); PK1, PK2 : Digest;
+   Supply_Now : Counter := 1_000;
+   Expire_Supply_In_Authority : Boolean := False;
+   Hide_After_Stage : Digest := Zero_Digest; Hidden_After_Stage : Boolean := False;
+   Supply_Map, Supply_Receipt : Digest := Zero_Digest;
+   Supply_Trust : Pkg_Supply_Map.Authorities (1 .. 1);
    function Keypair (PK, SK, Seed : System.Address) return Interfaces.C.int
      with Import, Convention => C, External_Name => "crypto_sign_seed_keypair";
    function Sign (Signature, Length, Message : System.Address;
@@ -102,6 +110,7 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       if not Probed and then Phase = "prepare" and then Inject = Commit_Denied then Probe_Reservations; end if;
       Status := OK;
       if Expire_Publication and then Phase = "prepare" then Await_Deadline; end if;
+      if Expire_Supply_In_Authority and then Phase = "prepare" then Supply_Now := 1_600; end if;
    end Authorize;
    procedure Observe_Barrier (R, T : Identity; H : Digest;
       Policy : out SB.Policy; State : out SB.State; Now : out Counter;
@@ -210,11 +219,30 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
           | "stage:file-effect" | "stage:publish-file" | "stage:finish-terminal" then Status := OK;
       end if;
       if Status = OK and then Expire_Stage and then Phase = "stage:inspect" then Await_Deadline; end if;
+      if Status = OK and then Phase = "stage:inspected" and then Hide_After_Stage /= Zero_Digest
+        and then not Hidden_After_Stage then
+         declare CAS : MC_FS.Root; H : constant String := MC_Hex.Encode (Hide_After_Stage); begin
+            MC_FS.Open_Root (Store_Path, CAS, Status, Private_Only => True);
+            if Status = OK then MC_FS.Rename (CAS, "objects/" & H (1 .. 2) & "/" & H (3 .. 64), "held-handoff-input", True, Status); end if;
+            MC_FS.Close (CAS); Hidden_After_Stage := Status = OK;
+         exception when others => MC_FS.Close (CAS); raise; end;
+      end if;
    end Authorize_Stage;
    procedure Bootstrap (R : Identity; G : Digest; Status : out Outcome) is
    begin Status := (if Inject /= Bootstrap_Denied and then R = Root_ID and then G = Grant then OK else Denied); end Bootstrap;
    package Stage is new Pkg_Generation_Stage (Authorize_Stage);
-   package Publisher is new Pkg_Generation_Publisher (Managed, Authorize_Stage, Bootstrap);
+   procedure Observe_Supply (R, T : Identity; Plan, Policy : Digest;
+      Value : out Pkg_Supply_Policy.Snapshot; Status : out Outcome) is
+   begin
+      Value := (others => <>); Status := Denied;
+      if not Matches (R, T, Plan) or else Policy /= M.Supply_Policy or else Inject = Supply_Denied then return; end if;
+      Value := (Map => Supply_Map, Observed_At => Supply_Now, Count => 1, others => <>);
+      Value.Trusted (1) := Supply_Trust (1);
+      if Inject = Supply_Key_Changed then Value.Trusted (1).Key := PK2; end if;
+      if Inject = Supply_Floor_Changed then Value.Trusted (1).Minimum_Epoch := 8; end if;
+      Status := OK;
+   end Observe_Supply;
+   package Publisher is new Pkg_Generation_Publisher (Managed, Authorize_Stage, Bootstrap, Observe_Supply);
    procedure Probe_Reservations is
       Local : Outcome; D : GD.Descriptor; Count : Natural;
       Stage_State : MC_FS.Root; Lock : MC_FS.File;
@@ -306,9 +334,13 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
          MC_Atomic.Read (Check_State, "root.state", Snapshot, N, S); Need ("retain state before missing member");
          Expect (N = Snapshot'Length, "complete prior state");
       end if;
-      for I in 0 .. Count + 1 loop
+      for I in 0 .. Count + 5 loop
          if I = 0 then Object := M.Catalog_Closure;
          elsif I = Count + 1 then Object := M.Intent;
+         elsif I = Count + 2 then Object := M.Supply_Policy;
+         elsif I = Count + 3 then Object := Supply_Map;
+         elsif I = Count + 4 then Object := Supply_Receipt;
+         elsif I = Count + 5 then Object := Receipt;
          else Object := Closure (81 + 32 * (I - 1) .. 112 + 32 * (I - 1)); end if;
          if Phase = 4 then Read_Native (Observation_Deadline); Need ("seed native result before loss"); end if;
          MC_FS.Rename (CAS, Object_Path (Object), "held-retention-object", True, S); Need ("hide retained object");
@@ -429,10 +461,11 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       Legacy_Manifest, Legacy_Plan : Digest; Wire : Bytes (1 .. GM.Max_Bytes); N : Natural;
    begin
       MC_Store.Open (Store_Path, Store, S); Need ("structural-only publication fixture");
-      for Format in GM.Structural_V1 .. GM.Native_V2 loop
-         Legacy := M; Legacy.Format := Format; Legacy.Intent := Zero_Digest;
+      for Format in GM.Structural_V1 .. GM.Intent_V3 loop
+         Legacy := M; Legacy.Format := Format; Legacy.Supply_Policy := Zero_Digest;
+         if Format /= GM.Intent_V3 then Legacy.Intent := Zero_Digest; end if;
          if Format = GM.Structural_V1 then Legacy.Catalog_Closure := Zero_Digest; end if;
-         Legacy.Transaction_ID := (others => Byte (81 + GM.Format_Kind'Pos (Format)));
+         Legacy.Transaction_ID := (others => Byte (181 + GM.Format_Kind'Pos (Format)));
          GM.Load_Plan (Store, M, 1, Batch.all, S); Need ("retain native batch fixture");
          Batch.Transaction_ID := GM.Transaction (Legacy, 1);
          FP.Encode (Batch.all, B.all, N, S); Need ("encode valid structural batch");
@@ -443,7 +476,7 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
          MC_Store.Pin (Store, Legacy.Transaction_ID, Legacy_Manifest, S); Need ("legacy immutable pin");
          Descriptor.Manifest := Legacy_Manifest;
          MC_Store.Put (Store, GD.Encode (Descriptor), Ignored, S); Need ("legacy descriptor storage");
-         GD.Compile (Before, Descriptor, (others => Byte (84 + GM.Format_Kind'Pos (Format))), 1, 2, Mark, Word (MC_Posix.Euid), Word (MC_Posix.Egid), Batch.all, S);
+         GD.Compile (Before, Descriptor, (others => Byte (184 + GM.Format_Kind'Pos (Format))), 1, 2, Mark, Word (MC_Posix.Euid), Word (MC_Posix.Egid), Batch.all, S);
          Need ("legacy descriptor plan"); FP.Encode (Batch.all, B.all, N, S); Need ("legacy publication encoding");
          MC_Store.Put (Store, B (1 .. N), Legacy_Plan, S); Need ("legacy publication candidate"); MC_Store.Close (Store);
          Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, Legacy_Plan, Receipt, Observation_Deadline, S);
@@ -453,6 +486,28 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       MC_Store.Close (Store);
    exception when others => MC_Store.Close (Store); raise;
    end Check_Structural_Publication;
+   procedure Check_Handoff_Retention is
+      CAS, State_Dir : MC_FS.Root; Snapshot, Latest : Pkg_Root_State.Frame; N : Natural;
+      type Hashes is array (Positive range <>) of Digest;
+   begin
+      MC_FS.Open_Root (Store_Path, CAS, S, Private_Only => True); Need ("handoff fault CAS");
+      MC_FS.Open_Root (State_Path, State_Dir, S, Private_Only => True); Need ("handoff fault state");
+      MC_Atomic.Read (State_Dir, "root.state", Snapshot, N, S); Need ("state before reservation handoff");
+      for H of Hashes'(M.Supply_Policy, Supply_Map, M.Intent) loop
+         Hide_After_Stage := H; Hidden_After_Stage := False; Publish;
+         Ada.Text_IO.Put_Line ("HANDOFF_MISSING " & MC_Hex.Encode (H) & " " & Outcome'Image (S));
+         Expect (Hidden_After_Stage and then S /= OK, "engine reservation rechecks inputs after stage handoff");
+         Hide_After_Stage := Zero_Digest;
+         MC_Atomic.Read (State_Dir, "root.state", Latest, N, S); Need ("state after lost handoff input");
+         Expect (N = Latest'Length and then Latest = Snapshot, "missing handoff input cannot admit or publish");
+         declare Name : constant String := MC_Hex.Encode (H); begin
+            MC_FS.Rename (CAS, "held-handoff-input", "objects/" & Name (1 .. 2) & "/" & Name (3 .. 64), True, S);
+            Need ("restore exact handoff input");
+         end;
+      end loop;
+      Hidden_After_Stage := False; MC_FS.Close (CAS); MC_FS.Close (State_Dir);
+   exception when others => Hide_After_Stage := Zero_Digest; MC_FS.Close (CAS); MC_FS.Close (State_Dir); raise;
+   end Check_Handoff_Retention;
    procedure Check_Plan_Restrictions is
       Original : constant Digest := Plan_Hash;
    begin
@@ -492,7 +547,7 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       MC_FS.Open_Read (Media, Name, File, S); Need ("native fixture original");
       MC_Store.Import_File (Store, File, MC_Store.Max_Object_Size, Catalog_Original, S); Need ("native original CAS"); MC_FS.Close (File);
       Pkg_Deb_Metadata.Inspect (Store, Catalog_Original, Observation_Deadline, Metadata.all, S); Need ("native expected control");
-      Selected (1) := (Catalog_Original, Metadata.Control); Free (Metadata);
+      Selected (1) := (Catalog_Original, Metadata.Control); Catalog_Control := Metadata.Control; Free (Metadata);
       Pkg_Deb_Payload.Stage (Store, Catalog_Original, Observation_Deadline, Inventory, S); Need ("native source claims");
       PX.Add (Payload, Inventory, Observation_Deadline, S); Need ("native index collection");
       PX.Seal (Payload, Observation_Deadline, S); Need ("native index seal");
@@ -582,13 +637,54 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       MC_FS.Close (CAS); MC_FS.Close (State_Root);
    exception when others => MC_Store.Close (Store); MC_FS.Close (Lock); MC_FS.Close (CAS); MC_FS.Close (State_Root); raise;
    end Check_Update_Failures;
+   procedure Build_Supply is
+      Wire : Bytes (1 .. Pkg_Archive_Supply.Wire_Size) := (others => 0);
+      Domain : constant String := "NiaOS/archive-supply/v1";
+      Message : Bytes (1 .. 2 + Domain'Length + Pkg_Archive_Supply.Body_Size);
+      Length : aliased Interfaces.C.unsigned_long_long := 0;
+      Rows : Pkg_Supply_Map.Sources (1 .. (if Before.Catalog = Catalog then 0 else 1));
+      Target : constant Pkg_Supply_Map.Context := (Root_ID, Before, First_Closure, Catalog, M.Catalog_Closure);
+      Until_Time : Counter;
+   begin
+      Supply_Trust (1) := (Scope => (others => 71), Key => PK1, Minimum_Epoch => 7, Maximum_Age => 600);
+      if Rows'Length = 1 then
+         Rows (1).Original := Catalog_Original; Rows (1).Control := Catalog_Control;
+         Wire (1 .. 8) := (78, 73, 65, 83, 85, 80, 48, 49); Wire (9 .. 40) := Supply_Trust (1).Scope;
+         -- Opaque synthetic upstream objects; cryptographic observer is real.
+         Wire (41 .. 72) := Receipt; Wire (73 .. 104) := Catalog_Original; Wire (105 .. 136) := Catalog_Control;
+         Wire (137 .. 168) := Receipt; Wire (169 .. 200) := Receipt; Wire (201 .. 232) := Receipt;
+         MC_Codec.Put64 (Wire, 233, 7); MC_Codec.Put64 (Wire, 241, Wide (Supply_Now));
+         MC_Codec.Put64 (Wire, 249, Wide (Supply_Now + 600));
+         MC_Codec.Put16 (Message, 1, Domain'Length);
+         for I in Domain'Range loop Message (I + 2) := Byte (Character'Pos (Domain (I))); end loop;
+         Message (Domain'Length + 3 .. Message'Last) := Wire (1 .. Pkg_Archive_Supply.Body_Size);
+         Expect (Sign (Wire (257)'Address, Length'Address, Message'Address, Message'Length, SK1'Address) = 0
+           and then Length = 64, "scoped synthetic supply signature");
+         MC_Store.Put (Store, Wire, Rows (1).Receipt, S); Need ("retain scoped observer receipt");
+         Supply_Receipt := Rows (1).Receipt;
+      end if;
+      Pkg_Supply_Map.Prepare (Store, Target, Rows, Supply_Trust, Supply_Now, Observation_Deadline,
+         Supply_Map, Until_Time, S); Need ("exact original difference at publication");
+      Pkg_Supply_Policy.Prepare (Store, Supply_Map, Target, Supply_Trust, Supply_Now, Observation_Deadline,
+         M.Supply_Policy, Until_Time, S); Need ("retain independent supply policy snapshot");
+   end Build_Supply;
+   procedure Configure_Universe (Generation : Counter) is
+      type UB_Access is access Bytes;
+      UB : UB_Access := new Bytes (1 .. Resolver_Wire.Maximum_Universe_Bytes); N_Bytes : Natural;
+      procedure Free is new Ada.Unchecked_Deallocation (Bytes, UB_Access);
+   begin
+      U0.Subject := (Root => MC_SHA256.Hash (Root_ID), Boot => Mark, Snapshot => Catalog, Policy => Mark,
+         Adapter_Set => Mark, Native_Inventory => Source, Configuration => Mark, Effect_Contracts => Mark, Generation => Generation);
+      U0.Item_Count := 1; U0.Items (1) := (Object_Hash => Catalog, Metadata_Hash => Mark,
+         Adapter_Hash => Mark, Initially_Present => True, Permitted => True, others => <>);
+      Resolver_Wire.Encode (U0.all, UB.all, N_Bytes, S); Need ("encode closed synthetic universe");
+      Universe_Hash := MC_SHA256.Hash (UB (1 .. N_Bytes)); Free (UB);
+   exception when others => Free (UB); raise;
+   end Configure_Universe;
    type Intent_Fault is (Unchanged, Damaged_Result, Wrong_Root, False_Initial);
    procedure Build (N : Positive; Damage : Intent_Fault := Unchanged) is
       Wire : Bytes (1 .. GM.Max_Bytes); N_Bytes : Natural;
       Variant : constant Natural := 30 * Intent_Fault'Pos (Damage);
-      type UB_Access is access Bytes;
-      UB : UB_Access := new Bytes (1 .. Resolver_Wire.Maximum_Universe_Bytes);
-      procedure Free is new Ada.Unchecked_Deallocation (Bytes, UB_Access);
    begin
       MC_Store.Open (Store_Path, Store, S); Need ("open fixture CAS");
       if MC_Posix.Euid = 0 then
@@ -597,10 +693,11 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       M := (Stage_ID => (others => Byte (40 + N + Variant)), Transaction_ID => (others => Byte (50 + N + Variant)),
          Epoch => 1, Fence => 2, Catalog => Catalog, Effect_Contract => Mark, Entries => 3, Count => 1, others => <>);
       if MC_Posix.Euid /= 0 then
-         M.Format := GM.Intent_V3;
+         M.Format := GM.Supply_V4;
          Pkg_Catalog_Retention.Prepare (Store, Catalog, Observation_Deadline, M.Catalog_Closure, S); Need ("native generation closure");
          Pkg_Generation_Intent.Prepare (Store, Root_ID, Before, First_Closure, Catalog, M.Catalog_Closure,
             "amd64", Enabled, Observation_Deadline, M.Intent, Ignored, S); Need ("native publication intent");
+         Build_Supply;
          if Damage /= Unchanged then
             MC_Store.Read_Object (Store, M.Intent, Wire, N_Bytes, S); Need ("retained intent fixture bytes");
             case Damage is
@@ -641,17 +738,12 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
          Ada.Directories.Create_Directory (Path);
          Ada.Directories.Create_Directory (Path & "/root"); Ada.Directories.Create_Directory (Path & "/state");
          if MC_Posix.Euid /= 0 then
-            if Damage = Unchanged then Check_Missing_Retention (0, Wire (1 .. N_Bytes)); end if;
+            if Damage = Unchanged and then not Laboratory then Check_Missing_Retention (0, Wire (1 .. N_Bytes)); end if;
             Stage.Provision (Path & "/root", Path & "/state", Store_Path, Wire (1 .. N_Bytes), Manifest_Hash, Observation_Deadline, S);
             Need ("provision selected stage");
          end if;
       end;
-      U0.Subject := (Root => MC_SHA256.Hash (Root_ID), Boot => Mark, Snapshot => Catalog, Policy => Mark,
-         Adapter_Set => Mark, Native_Inventory => Source, Configuration => Mark, Effect_Contracts => Mark, Generation => Counter (N));
-      U0.Item_Count := 1; U0.Items (1) := (Object_Hash => Catalog, Metadata_Hash => Mark,
-         Adapter_Hash => Mark, Initially_Present => True, Permitted => True, others => <>);
-      Resolver_Wire.Encode (U0.all, UB.all, N_Bytes, S); Need ("encode closed synthetic universe");
-      Universe_Hash := MC_SHA256.Hash (UB (1 .. N_Bytes)); Free (UB);
+      Configure_Universe (Counter (N));
    end Build;
    procedure Complete_Stage (Exercise_Retention : Boolean := True) is
       Path : constant String := GD.Stage_Path (Bank, After);
@@ -777,8 +869,45 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       Publish; Need ("recover durable commit window");
       Read_Current; Need ("read recovered commit"); Expect (Current = After, "recovery preserves one root/catalog decision");
    end Commit_Window;
+   procedure Recover_Laboratory is
+      Policy : Pkg_Supply_Policy.Snapshot; Wire : Bytes (1 .. GM.Max_Bytes); N : Natural;
+      Bound : Counter := 600_000;
+   begin
+      Expect (Ada.Command_Line.Argument_Count in 7 | 8 and then Ada.Command_Line.Argument (6) = "recover",
+         "lab recovery requires the independent expected plan and optional bounded I/O deadline");
+      Expect (MC_Posix.Euid /= 0, "laboratory remains unprivileged");
+      MC_Hex.Decode (Ada.Command_Line.Argument (7), Plan_Hash, S); Need ("lab expected plan hash");
+      if Ada.Command_Line.Argument_Count = 8 then
+         Bound := Counter'Value (Ada.Command_Line.Argument (8));
+         Expect (Bound in 1 .. 600_000, "bounded lab recovery deadline");
+      end if;
+      MC_Clock.Boottime_Milliseconds (Observation_Deadline, S); Need ("lab recovery clock");
+      Observation_Deadline := Observation_Deadline + Bound;
+      MC_Store.Open (Store_Path, Store, S); Need ("open existing lab store without initialization");
+      MC_Store.Read_Object (Store, Plan_Hash, B.all, N, S); Need ("read independent expected lab plan");
+      FP.Decode (B (1 .. N), P.all, S); Need ("decode lab plan");
+      GD.Check (Store, P.all, Before, After, S); Need ("bound lab descriptors");
+      MC_Store.Read_Object (Store, After.Manifest, Wire, N, S); Need ("lab manifest");
+      GM.Decode (Wire (1 .. N), M, S); Need ("decode lab manifest");
+      Manifest_Hash := After.Manifest; Catalog := M.Catalog;
+      Pkg_Supply_Policy.Load (Store, M.Supply_Policy, Observation_Deadline, Policy, S); Need ("retained lab supply policy");
+      Supply_Map := Policy.Map; Supply_Now := 2_000;
+      -- Independent fixed synthetic test policy; never adopt keys or time from
+      -- the object under test. Receipt was observed at 1000 and expires at 1600.
+      Supply_Trust (1) := (Scope => (others => 71), Key => PK1, Minimum_Epoch => 7, Maximum_Age => 600);
+      Receipt := MC_SHA256.Hash (Bytes'(7, 8, 9));
+      MC_Store.Close (Store); Configure_Universe (After.Generation);
+      Publish;
+      if S = OK then
+         Read_Current;
+         if S = OK and then Current /= After then S := Conflict; end if;
+      end if;
+      Ada.Text_IO.Put_Line ("LAB_RESULT " & Outcome'Image (S) & " " & MC_Hex.Encode (Plan_Hash));
+      if S /= OK then Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure); end if;
+   exception when others => MC_Store.Close (Store); raise;
+   end Recover_Laboratory;
 begin
-   Expect (Ada.Command_Line.Argument_Count in 4 | 5, "four disposable private directories and optional native fixture media");
+   Expect (Ada.Command_Line.Argument_Count in 4 .. 8, "disposable private directories, native fixture media and optional explicit lab mode");
    MC_Runtime.Initialize (S); Need ("runtime");
    MC_Clock.Boottime_Milliseconds (Observation_Deadline, S); Need ("observation clock"); Observation_Deadline := Observation_Deadline + 600_000;
    MC_Text.Set (Enabled (1), "amd64", S); Need ("explicit native update architecture policy");
@@ -786,6 +915,11 @@ begin
       Expect (Keypair (PK1'Address, SK1'Address, Seed1'Address) = 0, "test validator key");
       Expect (Keypair (PK2'Address, SK2'Address, Seed2'Address) = 0, "test reviewer key");
    end;
+   if Laboratory and then Ada.Command_Line.Argument (6) = "recover" then Recover_Laboratory; return; end if;
+   if Laboratory then
+      Expect (Laboratory and then Ada.Command_Line.Argument_Count = 6 and then Ada.Command_Line.Argument (6) = "checkpoint",
+         "explicit disposable lab checkpoint mode");
+   end if;
    MC_Store.Initialize (Store_Path, Store, S); Need ("initialize fixture CAS");
    MC_Store.Put (Store, Bytes'(0, 0), Attrs, S); Need ("empty attributes");
    MC_Store.Put (Store, Bytes'(7, 8, 9), Receipt, S); Need ("synthetic health receipt"); MC_Store.Close (Store);
@@ -832,18 +966,40 @@ begin
       MC_Atomic.Write (State, "root.state", Frame, False, S); Need ("restore exact initial state");
    end; MC_FS.Close (State);
    Read_Current; Expect (S = Stale and then Current = GD.Empty, "no fictitious initial generation");
+   if Laboratory then
+      Complete_Stage (False); Inject := Commit_Denied; Publish;
+      Expect (S = Denied, "lab leaves an actual admitted transaction before commit");
+      Read_Current; Expect (S = Indeterminate and then Current = GD.Empty, "lab checkpoint is not accepted");
+      Ada.Text_IO.Put_Line ("LAB_PLAN " & MC_Hex.Encode (Plan_Hash));
+      Ada.Text_IO.Put_Line ("LAB_MANIFEST " & MC_Hex.Encode (Manifest_Hash));
+      Ada.Text_IO.Put_Line ("LAB_POLICY " & MC_Hex.Encode (M.Supply_Policy));
+      Report; return;
+   end if;
    Publish; Expect (S = Conflict, "incomplete stage cannot publish"); Complete_Stage;
    Check_Missing_Retention (2); Check_Missing_Retention (3); Check_Deadlines;
    Check_Plan_Restrictions;
-   Check_Structural_Publication; Check_Callback_Deadlines;
+   Check_Structural_Publication; Check_Callback_Deadlines; Check_Handoff_Retention;
    for F in Authority_Denied .. Current_Changed loop
       Inject := F; Publish; Expect (S /= OK, "composed gate refuses " & Fault'Image (F));
       Read_Current; Expect (S = Stale and then Current = GD.Empty, "denied preparation leaves no accepted generation");
    end loop;
+   for F in Supply_Denied .. Supply_Floor_Changed loop
+      Inject := F; Publish; Expect (S = Denied, "independent supply policy refuses new publication");
+      Read_Current; Expect (S = Stale and then Current = GD.Empty, "supply refusal does not admit a generation");
+   end loop;
+   Inject := None; Supply_Now := 1_600; Publish;
+   Expect (S = Stale, "expired planned supply cannot become a new transaction");
+   Read_Current; Expect (S = Stale and then Current = GD.Empty, "expiry leaves actual initial state");
+   Supply_Now := 1_000; Expire_Supply_In_Authority := True; Publish;
+   Expect (S = Stale, "supply expiry during managed authorization is rechecked before admission");
+   Read_Current; Expect (S = Stale and then Current = GD.Empty, "late authority does not admit expired supply");
+   Supply_Now := 1_000; Expire_Supply_In_Authority := False;
    Inject := Stage_Denied; Publish; Expect (S = Denied, "stage reservation requires independent authority");
    Inject := Commit_Denied; Publish; Expect (S = Denied, "commit can be revoked after file application");
    Read_Current; Expect (S = Indeterminate and then Current = GD.Empty, "candidate file is not current during denied commit");
-   Inject := None; Publish; Need ("resume first publication");
+   Supply_Now := 2_000;
+   Inject := Supply_Floor_Changed; Publish; Expect (S = Denied, "recorded recovery still requires independent trust floor");
+   Inject := None; Publish; Need ("resume first publication after supply expiry");
    Read_Current; Need ("read first publication"); Expect (Current = After, "first root/catalog pair exact");
    Publish; Need ("idempotent publication retry");
    Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, Plan_Hash, Mark, Observation_Deadline, S);

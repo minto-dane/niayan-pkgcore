@@ -159,7 +159,7 @@ begin
       Expect (S = Invalid_Input and then Readback = GM.Manifest'(others => <>), "native header cannot be relabeled as v1");
       Damaged := Wire; Damaged (129 .. 160) := Zero_Digest; GM.Decode (Damaged (1 .. Size), Readback, S);
       Expect (S = Invalid_Input and then Readback = GM.Manifest'(others => <>), "missing closure clears decoded output");
-      Damaged := Wire; Damaged (8) := 52; GM.Decode (Damaged (1 .. Size), Readback, S);
+      Damaged := Wire; Damaged (8) := 53; GM.Decode (Damaged (1 .. Size), Readback, S);
       Expect (S = Unsupported and then Readback = GM.Manifest'(others => <>), "unknown profile cannot downgrade");
       Native.Format := GM.Structural_V1; Expect (not GM.Valid (Native), "v1 must keep reserved bytes zero");
       GM.Check_Retention (Store, M, Deadline, S); Expect (S = Unsupported, "v1 is not native retention evidence");
@@ -179,6 +179,18 @@ begin
       Damaged := Wire; Damaged (8) := 50; GM.Decode (Damaged (1 .. Size), Readback, S);
       Expect (S = Invalid_Input and then Readback = GM.Manifest'(others => <>), "v3 cannot downgrade by relabeling");
       Native.Format := GM.Native_V2; Expect (not GM.Valid (Native), "v2 cannot silently acquire an intent field");
+      Native.Format := GM.Supply_V4; Expect (not GM.Valid (Native), "v4 requires supply policy");
+      Native.Supply_Policy := (others => 93); GM.Encode (Native, Wire, Size, S); Need ("encode supply policy reference");
+      Expect (Size = GM.Supply_Header_Size + 64 * Native.Count and then Wire (8) = 52
+         and then Wire (193 .. 224) = Native.Supply_Policy, "v4 supply policy header");
+      GM.Decode (Wire (1 .. Size), Readback, S); Need ("decode v4 header");
+      Expect (Readback = Native, "v4 round trip");
+      Damaged := Wire; Damaged (193 .. 224) := Zero_Digest; GM.Decode (Damaged (1 .. Size), Readback, S);
+      Expect (S = Invalid_Input and then Readback = GM.Manifest'(others => <>), "missing policy clears manifest");
+      for Tag in Byte range 49 .. 51 loop
+         Damaged := Wire; Damaged (8) := Tag; GM.Decode (Damaged (1 .. Size), Readback, S);
+         Expect (S /= OK and then Readback = GM.Manifest'(others => <>), "v4 cannot relabel as a legacy manifest");
+      end loop;
    end;
    Manifest_Digest := MC_SHA256.Hash (Encoded (1 .. Manifest_Used)); MC_Store.Close (Store);
    if MC_Posix.Euid = 0 then

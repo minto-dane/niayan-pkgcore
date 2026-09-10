@@ -23,6 +23,16 @@ package Pkg_Supply_Map with SPARK_Mode => Off is
       Address : out Digest; Valid_Until : out Counter; Status : out Outcome);
    procedure Verify (Store : in out MC_Store.Store; Address : Digest; Target : Context;
       Trusted : Authorities; Now, Deadline : Counter; Valid_Until : out Counter; Status : out Outcome);
+   procedure Verify_Interval (Store : in out MC_Store.Store; Address : Digest; Target : Context;
+      Trusted : Authorities; Observed_At, Now, Deadline : Counter;
+      Valid_Until : out Counter; Status : out Outcome);
+   -- Fresh verification additionally proves every receipt was valid at the
+   -- proposed retained observation. Observed_At <= independently sampled Now.
+   procedure Recheck_At (Store : in out MC_Store.Store; Address : Digest; Target : Context;
+      Trusted : Authorities; Observed_At, Deadline : Counter; Status : out Outcome);
+   -- Historical signature/native verification with a live I/O deadline. Policy
+   -- and observation must come from an authenticated, already admitted plan.
+   -- This never grants new admission and does not sample or change the OS clock.
    procedure Check_Retention (Store : MC_Store.Store; Address, Catalog, Closure : Digest;
       Deadline : Counter; Status : out Outcome);
    -- NIASMAP1 binds root, exact predecessor hash/closure and target catalog/closure
@@ -40,6 +50,7 @@ package Pkg_Supply_Map with SPARK_Mode => Off is
    -- Before is a caller assertion: the publication authority must prove it is
    -- the actual accepted descriptor under its writer reservation. This SDK does
    -- not read root.state, execute DEB effects, pin a generation or change its
-   -- manifest. Admission/recovery integration and typed whole-root GC remain.
+   -- manifest. The v4 publisher supplies admission/recovery binding; typed
+   -- whole-root GC and production policy/time providers remain.
    -- UID0 is refused. A failed Prepare may leave an unreferenced CAS object.
 end Pkg_Supply_Map;
