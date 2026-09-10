@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Text; with MC_Types; use MC_Types;
 package Pkg_Deb_Semantics with SPARK_Mode is
    type Relation is (Any_Version, Less_Than, At_Most, Exactly, At_Least, Greater_Than);

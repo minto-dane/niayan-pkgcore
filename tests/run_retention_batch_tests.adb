@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Test_Support; use Test_Support; with MC_Types; use MC_Types;
 with MC_Backups; with Pkg_Retention_Batch; with Recovery_Fixtures;
 procedure Run_Retention_Batch_Tests with SPARK_Mode => Off is

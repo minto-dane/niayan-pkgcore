@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_FS; with MC_Atomic; with MC_Properties; with MC_Text; with MC_Hex;
 with MC_Authentic; with MC_Clock; with MC_HTTPS; with MC_Numbers; with MC_Codec; with MC_SHA256;
 with Pkg_Artifact_Grant;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 """Independent persisted catalog frame and retained metadata oracle.
 
 The four synthetic payloads have only plain regular entries or no entries.

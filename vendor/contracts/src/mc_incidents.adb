@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Incidents with SPARK_Mode is
    function Valid (S : State) return Boolean is
      (S.Incident_ID /= Zero_Identity and then S.Cluster_ID /= Zero_Identity

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 with Pkg_File_Replay;
 package Pkg_Recovery_Audit with SPARK_Mode => Off is

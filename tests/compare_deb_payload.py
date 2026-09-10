@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 """Read-only independent tar/CAS oracle for the native payload observation probe."""
 import argparse
 from decimal import Decimal, ROUND_FLOOR

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Resolver_CNF with SPARK_Mode is
    procedure Compile (U : Universe; F : out Formula; Status : out Outcome;
       Fuel : in out Natural) is

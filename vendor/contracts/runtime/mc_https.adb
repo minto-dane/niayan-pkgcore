@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Interfaces.C; with System; with System.Address_To_Access_Conversions;
 with MC_Text; with MC_Clock;
 package body MC_HTTPS with SPARK_Mode => Off is

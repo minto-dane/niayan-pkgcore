@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Maintenance with SPARK_Mode is
    function Valid (H : Hold) return Boolean is
      (H.Scope /= Zero_Identity and then H.Hold_ID /= Zero_Identity

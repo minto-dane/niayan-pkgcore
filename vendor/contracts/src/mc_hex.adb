@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Hex with SPARK_Mode is
    Table : constant String := "0123456789abcdef";
    function Encode (Data : Bytes) return String is

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Command_Line; with Ada.Text_IO;
 with MC_Types; use MC_Types;
 with MC_Contract_Profile; with MC_Stop_Barrier; with MC_Stop_Barrier_Auth;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 """Separate Linux-restorable synthetic DEBs; original edge fixtures stay intact."""
 import argparse
 import hashlib

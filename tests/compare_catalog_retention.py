@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 """Independent exact CAS retention reference for two bounded synthetic catalogs.
 
 Reads raw DEBs, control files, tar contents, link text and attribute records.

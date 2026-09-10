@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Codec; with MC_SHA256;
 package body MC_Health_Report with SPARK_Mode is
    use type Byte; use type Wide;

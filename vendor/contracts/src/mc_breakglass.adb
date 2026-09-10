@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Breakglass with SPARK_Mode is
    function Permitted (R : Request; Now, Current_Trust_Epoch : Counter) return Boolean is
    begin

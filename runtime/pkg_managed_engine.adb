@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Pkg_Quiescent_Engine; with Pkg_Configuration_Engine; with Pkg_Resolution_Engine;
 package body Pkg_Managed_Engine with SPARK_Mode => Off is
    package Stopped is new Pkg_Quiescent_Engine(Authorize,Observe_Barrier);

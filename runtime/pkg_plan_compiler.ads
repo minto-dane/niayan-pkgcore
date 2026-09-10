@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 package Pkg_Plan_Compiler with SPARK_Mode=>Off is
    procedure Compile(Manifest_Directory, Output_Directory : String; Plan_Digest : out Digest; Status : out Outcome);

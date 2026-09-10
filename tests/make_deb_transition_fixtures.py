@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 """Synthetic before/after catalogs for ordinary transition policy; no effects."""
 import argparse
 import gzip

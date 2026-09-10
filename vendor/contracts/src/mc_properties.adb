@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Properties with SPARK_Mode is
    use type MC_Types.Byte;
    procedure Parse(Data : Bytes; D : out Document; Status : out Outcome) is

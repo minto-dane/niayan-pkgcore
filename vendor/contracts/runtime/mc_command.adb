@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Posix; with MC_FS; with MC_Clock; with Interfaces.C; with System;
 package body MC_Command with SPARK_Mode => Off is
    use Interfaces.C; use MC_Posix;

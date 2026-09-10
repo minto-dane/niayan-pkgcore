@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 -- Scoped keys and opaque upstream metadata here are synthetic test inputs.
 -- The integration bridge separately issues from real TUF/OpenPGP fixtures.
 with Ada.Command_Line; with Ada.Directories; with Ada.Text_IO; with Ada.Unchecked_Deallocation;

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Codec; with MC_SHA256;
 package body MC_Stop_Barrier with SPARK_Mode is
    use type Word; use type Wide; use type Byte;

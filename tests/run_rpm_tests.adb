@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 with MC_File_IO; with Pkg_RPM;
 with Test_Support; use Test_Support;

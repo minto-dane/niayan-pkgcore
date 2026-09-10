@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Accounting with SPARK_Mode is
    function Valid (E : Event) return Boolean is
      (E.Event_ID/=Zero_Identity and then E.Scope/=Zero_Identity and then E.Object_ID/=Zero_Identity

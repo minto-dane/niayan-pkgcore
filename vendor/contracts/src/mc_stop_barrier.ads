@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_Time_Guard;
 package MC_Stop_Barrier with SPARK_Mode, Pure is
    Capacity : constant := 32;

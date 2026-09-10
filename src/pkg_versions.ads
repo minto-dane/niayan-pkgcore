@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package Pkg_Versions with SPARK_Mode, Pure is
    type Ordering is (Older, Equal, Newer);
    -- ASCII rpmvercmp-style VERSION/RELEASE segment comparison, including ~ and ^.

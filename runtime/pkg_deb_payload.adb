@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Containers.Indefinite_Ordered_Maps; with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded; with Ada.Unchecked_Deallocation;
 with Interfaces.C; with Interfaces.C.Strings; with System;

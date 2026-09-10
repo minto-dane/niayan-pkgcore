@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Request_Replay with SPARK_Mode is
    use type MC_Replay.Decision;
    procedure Consume (S : in out State; E : MC_Log_Format.Log_Entry;

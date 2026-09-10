@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_Text; with Pkg_Versions;
 package Pkg_EVR with SPARK_Mode, Pure is
    type EVR is record

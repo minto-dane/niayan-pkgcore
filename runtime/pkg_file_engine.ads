@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 with MC_FS; with MC_Store; with MC_Log;
 with Pkg_File_Plan; with Pkg_Root_State;

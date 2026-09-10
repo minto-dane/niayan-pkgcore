@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Platform_Profile with SPARK_Mode is
    function Ready (F : Facts; Requested : Grade) return Boolean is
       Common : constant Boolean :=

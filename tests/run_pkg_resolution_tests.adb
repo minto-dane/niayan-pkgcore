@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_Text; with Pkg_Dependency;
 with Pkg_RPM_Resolution; with Resolver_Model; with Test_Support; use Test_Support;
 procedure Run_Pkg_Resolution_Tests with SPARK_Mode => Off is

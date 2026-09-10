@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 """Independent control-tar/field/relationship and candidate hash comparison.
 
 Read-only qualification oracle for specified inputs, never an installed database

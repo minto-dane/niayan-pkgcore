@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_Store; with Pkg_Payload_Map;
 package Pkg_Archive with SPARK_Mode => Off is
    procedure Stage(S : in out MC_Store.Store; RPM : Digest; Map : Pkg_Payload_Map.Inventory;

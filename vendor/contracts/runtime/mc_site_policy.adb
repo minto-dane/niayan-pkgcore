@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Codec; with MC_SHA256; with MC_Atomic; with MC_Posix; with MC_Protocol;
 package body MC_Site_Policy with SPARK_Mode => Off is
    use type MC_Types.Byte;

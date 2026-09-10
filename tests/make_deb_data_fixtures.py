@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 """Deterministic upstream-codec fixtures; data bytes are never installed."""
 import argparse
 import bz2

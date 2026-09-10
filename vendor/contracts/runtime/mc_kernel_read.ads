@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 package MC_Kernel_Read with SPARK_Mode => Off is
    type Item is (Boot_ID, PID_One, Cgroup_Controllers, Kernel_Lockdown,

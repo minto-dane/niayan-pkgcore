@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Numbers;
 package body MC_JSON with SPARK_Mode is
    use type MC_Types.Byte;

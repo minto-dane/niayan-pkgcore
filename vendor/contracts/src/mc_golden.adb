@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_SHA256;
 package body MC_Golden with SPARK_Mode is
    function Header return MC_Protocol.Header is

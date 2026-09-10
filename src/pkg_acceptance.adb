@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Acceptance with SPARK_Mode is
    function Valid (S : State) return Boolean is
      (S.Transaction_ID /= Zero_Identity and then S.Plan /= Zero_Digest

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_Text; with Pkg_RPM;
 package Pkg_RPM_Fields with SPARK_Mode, Pure is
    procedure Text(B : Bytes; M : Pkg_RPM.Metadata; Tag : Word; Item : Positive;

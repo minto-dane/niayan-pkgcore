@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Resolver_Verify with SPARK_Mode is
    procedure Spend (Fuel : in out Natural; OK : out Boolean) is
    begin OK := Fuel > 0; if OK then Fuel := Fuel - 1; end if; end Spend;

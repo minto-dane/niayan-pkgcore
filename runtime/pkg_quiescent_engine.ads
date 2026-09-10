@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_Stop_Barrier; with Pkg_File_Engine;
 generic
    with procedure Authorize (Root_ID, Transaction_ID : Identity; Plan, Evidence : Digest;

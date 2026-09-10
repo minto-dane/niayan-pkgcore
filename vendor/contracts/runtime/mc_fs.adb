@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Interfaces.C; with System; with MC_Posix; with MC_Paths;
 with MC_SHA256; with MC_Codec;
 package body MC_FS with SPARK_Mode => Off is

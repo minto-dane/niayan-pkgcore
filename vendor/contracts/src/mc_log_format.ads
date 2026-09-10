@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 package MC_Log_Format with SPARK_Mode, Pure is
    Record_Size : constant := 256;

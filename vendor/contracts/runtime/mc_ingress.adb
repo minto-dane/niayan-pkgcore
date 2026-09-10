@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Protocol; with MC_SHA256;
 package body MC_Ingress with SPARK_Mode => Off is
    use type MC_Replay.Decision;

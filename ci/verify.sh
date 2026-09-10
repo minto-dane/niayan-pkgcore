@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 # No credentials, network, host mutation or privilege escalation are needed.
 set -eu
 umask 077

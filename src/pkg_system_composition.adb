@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_System_Composition with SPARK_Mode is
    function Evaluate (C : Composition) return Assessment is
       Kernel_Index, Init_Count, Manager_Count, Libc_Count, Loader_Count, Recovery_Count : Natural := 0;

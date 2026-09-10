@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Resolver_Model with SPARK_Mode is
    use type Byte;
    function Less (A, B : Digest) return Boolean is

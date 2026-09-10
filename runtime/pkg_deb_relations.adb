@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_SHA256; with Pkg_Deb_Versions;
 package body Pkg_Deb_Relations with SPARK_Mode => Off is
    use Pkg_Deb_Semantics;

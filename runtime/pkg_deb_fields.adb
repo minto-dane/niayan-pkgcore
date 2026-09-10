@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Characters.Handling;
 with MC_SHA256; with Pkg_Deb_Versions;
 package body Pkg_Deb_Fields with SPARK_Mode => Off is

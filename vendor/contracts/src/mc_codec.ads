@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 package MC_Codec with SPARK_Mode, Pure is
    use type MC_Types.Wide; use type MC_Types.Word;

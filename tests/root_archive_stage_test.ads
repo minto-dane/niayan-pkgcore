@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Store; with MC_Types; use MC_Types;
 with Pkg_Selected_Catalog;
 package Root_Archive_Stage_Test with SPARK_Mode => Off is

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Unchecked_Deallocation;
 package body Pkg_RPM_File with SPARK_Mode => Off is
    procedure Release is new Ada.Unchecked_Deallocation(Bytes,Buffer);

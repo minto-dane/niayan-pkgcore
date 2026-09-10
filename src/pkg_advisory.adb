@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Advisory with SPARK_Mode is
    function Valid (A : Advisory) return Boolean is
      (A.ID /= Zero_Digest and then A.Package_ID /= Zero_Digest and then A.Fixed_Build /= Zero_Digest

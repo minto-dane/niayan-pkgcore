@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 project Tests is
    for Languages use ("Ada", "C");
    for Source_Dirs use ("src", "vendor/resolver/src", "runtime", "vendor/contracts/src", "vendor/contracts/runtime", "tests");

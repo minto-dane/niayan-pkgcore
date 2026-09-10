@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 """Independently compare the assembled root's exact spans with original DEBs."""
 import argparse
 import hashlib

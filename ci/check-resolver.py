@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 """Check an exact pinned independent resolver source copy before building."""
 from pathlib import Path
 import hashlib,json,re,stat,os

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 -- Runtime integration suite. Run ONLY in fresh directories created by the harness.
 -- The test authorizer is deliberately not shipped as a runtime site adapter.
 with Ada.Command_Line; with Interfaces.C;

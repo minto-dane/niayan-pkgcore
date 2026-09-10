@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 with Resolver_CNF; with Resolver_Proof;
 package Resolver_LRAT with SPARK_Mode is

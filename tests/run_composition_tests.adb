@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with Pkg_System_Composition;
 with Test_Support; use Test_Support;
 procedure Run_Composition_Tests with SPARK_Mode => Off is

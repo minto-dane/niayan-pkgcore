@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Release with SPARK_Mode is
    function Qualified (Evidence : Evidence_Set) return Boolean is
    begin

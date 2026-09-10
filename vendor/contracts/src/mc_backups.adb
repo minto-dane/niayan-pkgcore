@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_SHA256;
 package body MC_Backups with SPARK_Mode is
    function Valid (P : Policy) return Boolean is

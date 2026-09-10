@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Types with SPARK_Mode is
    use type Byte;
    function Is_Zero (Value : Bytes) return Boolean is

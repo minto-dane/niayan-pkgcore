@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 """Independent original/control, source-set and endpoint-receipt hash oracle.
 
 Expected relation outcomes come from the declared matrix and separately tested

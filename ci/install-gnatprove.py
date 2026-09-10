@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 """Install the checksum-pinned development prover into a private cache (no sudo)."""
 from __future__ import annotations
 import argparse

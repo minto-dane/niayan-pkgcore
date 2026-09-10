@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Authentic; with MC_Contract_Profile;
 package body MC_Stop_Barrier_Auth with SPARK_Mode => Off is
    use type MC_Stop_Barrier.Channel;

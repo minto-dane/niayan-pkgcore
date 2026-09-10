@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Configuration_Engine with SPARK_Mode=>Off is
    use type MC_Config_Receipt.Phase;
    procedure Guard(Root_ID,Transaction_ID : Identity;Plan,Evidence : Digest;

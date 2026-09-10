@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 package MC_Receiver_Ledger with SPARK_Mode => Off is
    type Receipt_State is (Not_Recorded, In_Progress, Terminal_OK, Terminal_Failure);

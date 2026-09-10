@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Interfaces;

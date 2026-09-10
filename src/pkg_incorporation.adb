@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Incorporation with SPARK_Mode is
    function Valid (I : Incorporation) return Boolean is
    begin

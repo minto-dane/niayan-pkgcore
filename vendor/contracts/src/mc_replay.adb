@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Replay with SPARK_Mode is
    function Check
      (State : Window; Epoch, Token, Sequence_Number : Counter;

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Resolver_Builder with SPARK_Mode is
    procedure Append (U : in out Universe; N : Expression_Node; ID : out Node_ID; Status : out Outcome) is
    begin

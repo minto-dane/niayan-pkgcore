@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Resolver_Proof;
 package body Resolver_LRAT with SPARK_Mode is
    use type Byte;

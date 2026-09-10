@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_System_Baseline with SPARK_Mode is
    function Valid (B : Baseline) return Boolean is
      (B.ID/=Zero_Digest and then B.Distribution/=Zero_Digest and then B.Repository_Snapshot/=Zero_Digest

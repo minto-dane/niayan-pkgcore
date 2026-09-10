@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Interfaces.C; with System; with System.Storage_Elements;
 package body MC_Runtime with SPARK_Mode => Off is
    use Interfaces.C; use type System.Address;

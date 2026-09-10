@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Authentic; with MC_Fault_Report;
 package body MC_Fault_Auth with SPARK_Mode => Off is
    procedure Verify

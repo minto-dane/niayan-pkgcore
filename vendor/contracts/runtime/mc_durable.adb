@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Interfaces.C; with System; with MC_Paths;
 package body MC_Durable with SPARK_Mode => Off is
    use Interfaces.C;

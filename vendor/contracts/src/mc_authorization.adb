@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Authorization with SPARK_Mode is
    function Within_Scope
      (H : MC_Protocol.Header; Policy : Scope; Now : Counter) return Boolean is

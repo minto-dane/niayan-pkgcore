@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Codec; with MC_SHA256;
 package body Pkg_Inventory with SPARK_Mode is
    use type Pkg_File_Plan.Kind; use type Pkg_File_Plan.State_Domain;

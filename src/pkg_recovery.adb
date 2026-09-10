@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Recovery with SPARK_Mode is
    use Pkg_Transactions;
    function Decide

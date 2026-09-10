@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Strings; with Ada.Strings.Fixed;
 with Interfaces.C;
 with MC_Clock; with MC_FS; with MC_Posix; with MC_SHA256;

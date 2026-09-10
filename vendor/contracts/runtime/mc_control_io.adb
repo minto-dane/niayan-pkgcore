@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Control_Codec; with MC_Contract_Profile; with MC_Atomic;
 with MC_Posix; with MC_Authentic; with MC_SHA256; with MC_Clock; with MC_Hex;
 package body MC_Control_IO with SPARK_Mode => Off is

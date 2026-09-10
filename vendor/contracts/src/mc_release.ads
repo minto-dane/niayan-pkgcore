@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package MC_Release with SPARK_Mode, Pure is
    type Evidence_Item is
      (Compiler_Build, All_Unit_Tests, Integration_Tests, Protocol_Matrix,

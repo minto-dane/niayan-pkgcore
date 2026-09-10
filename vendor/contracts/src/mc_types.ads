@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Interfaces;
 package MC_Types with SPARK_Mode, Pure is
    subtype Byte is Interfaces.Unsigned_8;

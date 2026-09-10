@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_Text;
 package Pkg_Dependency with SPARK_Mode, Pure is
    Max_Nodes : constant:=256; Max_Providers : constant:=2_048; Max_Packages : constant:=1_024;

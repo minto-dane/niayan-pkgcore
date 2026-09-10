@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Hex; with MC_Dirents; with MC_SHA256; with MC_Posix; with Interfaces.C; with System;
 package body MC_Store with SPARK_Mode => Off is
    use type MC_FS.Entry_Kind; use type MC_Types.Word; use type MC_FS.Entry_Info; use type Interfaces.C.int;

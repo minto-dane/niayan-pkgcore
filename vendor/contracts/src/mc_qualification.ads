@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_Release;
 package MC_Qualification with SPARK_Mode, Pure is
    type Role is (Builder, Security_Reviewer, Operations_Approver);

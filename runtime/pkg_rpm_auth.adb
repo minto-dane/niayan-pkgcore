@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Interfaces.C;
 with MC_FS; with MC_Command; with MC_Text;
 with Pkg_RPM; with Pkg_RPM_File;

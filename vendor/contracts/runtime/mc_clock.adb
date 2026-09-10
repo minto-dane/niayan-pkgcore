@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Posix; with Interfaces.C; with MC_Kernel_Read; with MC_Hex;
 package body MC_Clock with SPARK_Mode => Off is
    use type MC_Types.Byte;

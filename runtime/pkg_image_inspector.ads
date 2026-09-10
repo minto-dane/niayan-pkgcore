@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_FS; with Pkg_File_Plan;
 package Pkg_Image_Inspector with SPARK_Mode=>Off is
    procedure Inspect(R : MC_FS.Root; Path : String; Maximum_Bytes : Counter;

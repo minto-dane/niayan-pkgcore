@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Activation with SPARK_Mode is
    use type Pkg_Advisory.Activation;
    function Evaluate (F : Facts) return Runtime_State is

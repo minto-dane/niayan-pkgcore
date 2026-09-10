@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Attestation with SPARK_Mode is
    function Valid (P : Policy) return Boolean is
      (P.Cluster_ID /= Zero_Identity and then P.Node_ID /= Zero_Identity

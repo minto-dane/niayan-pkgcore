@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Text with SPARK_Mode is
    function Length (V : Value) return Natural is (V.Used);
    function Image (V : Value) return String is (V.Data (1 .. V.Used));

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Pkg_RPM_Fields; with MC_Hex; with MC_SHA256; with MC_Paths;
 package body Pkg_Payload_Map with SPARK_Mode is
    use Pkg_RPM_Fields; use Pkg_File_Plan;

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_FS; with MC_Atomic; with MC_Hex; with MC_Paths;
 package body MC_Tools with SPARK_Mode => Off is
    use type MC_Types.Byte;

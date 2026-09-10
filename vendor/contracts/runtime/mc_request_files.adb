@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_FS; with MC_Atomic; with MC_Witness; with MC_Numbers;
 package body MC_Request_Files with SPARK_Mode => Off is
    use type MC_FS.Entry_Kind;

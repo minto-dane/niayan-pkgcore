@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Finalization;
 with MC_Types; use MC_Types;
 with MC_Store; with Pkg_Deb_Fields; with Pkg_Deb_Relations; with Pkg_Payload_Index;

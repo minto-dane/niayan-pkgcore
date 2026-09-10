@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Codec; with MC_Paths;
 package body Pkg_File_Plan with SPARK_Mode is
    use type MC_Types.Byte;

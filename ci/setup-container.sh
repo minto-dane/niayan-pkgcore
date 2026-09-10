@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 # Generated component CI dependency setup; use only in the pinned CI container.
 set -eu
 [ "$(id -u)" -eq 0 ] || exit 78

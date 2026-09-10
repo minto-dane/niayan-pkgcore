@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Interfaces.C; with System; with MC_Hex;
 package body Pkg_Root_Preparation with SPARK_Mode => Off is
    procedure Request

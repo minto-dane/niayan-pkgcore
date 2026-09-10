@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 package MC_Witness with SPARK_Mode, Pure is
    type Fact is (Cluster_Reservation, Resource_Quiesced, Semantic_Health,

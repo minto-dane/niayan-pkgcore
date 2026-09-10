@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Interfaces.C; with System;
 with MC_Clock; with MC_FS; with MC_Posix; with MC_SHA256;
 package body Pkg_Deb_Data_Stream with SPARK_Mode => Off is

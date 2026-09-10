@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_Text;
 with Pkg_Dependency; with Resolver_Model;
 package Pkg_RPM_Resolution with SPARK_Mode is

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Deb_Versions with SPARK_Mode is
    Max_Epoch : constant := 2_147_483_647;
    type Parts is record

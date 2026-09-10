@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 package Pkg_Rollback_Contract with SPARK_Mode, Pure is
    type Migration_Kind is (None, Reversible, Forward_Compatible, Irreversible);

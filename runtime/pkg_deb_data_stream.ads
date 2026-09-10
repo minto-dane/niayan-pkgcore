@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 with MC_Store; with Pkg_Deb_Container;
 package Pkg_Deb_Data_Stream with SPARK_Mode => Off is

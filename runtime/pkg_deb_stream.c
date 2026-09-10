@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: BSD-3-Clause
  * Incremental, bounded interface to unmodified upstream codecs. No I/O.
  * Each call borrows buffers; no caller buffer is retained between calls.
  * Results: 0 continue, 1 complete, 2 malformed/state, 3 budget,

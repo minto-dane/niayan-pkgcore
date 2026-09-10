@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 """Deterministic tar observations. No fixture is extracted or executed."""
 import argparse
 import hashlib

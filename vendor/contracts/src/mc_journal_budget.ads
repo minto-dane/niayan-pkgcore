@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 package MC_Journal_Budget with SPARK_Mode, Pure is
    function Fits (Used, Limit, Pending, Added : Counter) return Boolean is

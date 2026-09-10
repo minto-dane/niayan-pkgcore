@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Admission with SPARK_Mode is
    function Admissible (F : Facts) return Boolean is
      (not Is_Zero (F.Original_RPM_Digest) and then not Is_Zero (F.Contract_Digest)

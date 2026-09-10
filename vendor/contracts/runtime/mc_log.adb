@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Journal_Budget; with MC_SHA256; with MC_Posix; with Interfaces.C;
 package body MC_Log with SPARK_Mode => Off is
    use type Interfaces.C.int;

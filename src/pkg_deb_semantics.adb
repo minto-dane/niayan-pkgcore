@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Pkg_Deb_Versions;
 package body Pkg_Deb_Semantics with SPARK_Mode is
    procedure Matches (Need : Requirement; Fact : Capability;

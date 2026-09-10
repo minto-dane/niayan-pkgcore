@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Exposure_Policy with SPARK_Mode is
    function Evaluate (P : Policy; F : Facts) return Status is
       Limit : Counter;

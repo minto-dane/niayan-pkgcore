@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Interfaces.C; with Interfaces.C.Strings; with System;
 with MC_FS; with MC_Text; with MC_Clock; with Pkg_File_Plan;
 package body Pkg_Archive with SPARK_Mode => Off is

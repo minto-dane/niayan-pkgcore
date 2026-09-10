@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_FS; with MC_Atomic; with MC_Checkpoint; with MC_SHA256; with MC_Hex;
 with MC_Contract_Profile;
 package body MC_Checkpoint_Store with SPARK_Mode => Off is

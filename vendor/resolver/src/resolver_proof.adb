@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Resolver_Proof with SPARK_Mode is
    type Assignment is array (Positive range 1 .. Max_Variables) of Integer range -1 .. 1;
    type Marks is array (Positive range 1 .. Max_Variables) of Integer range -1 .. 1;

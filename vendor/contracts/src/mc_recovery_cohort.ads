@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 package MC_Recovery_Cohort with SPARK_Mode, Pure is
    type Phase is (Uninspected, Quarantined, Reconstructing, Candidate_Checked,

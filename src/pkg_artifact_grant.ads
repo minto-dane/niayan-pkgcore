@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_Text;
 package Pkg_Artifact_Grant with SPARK_Mode, Pure is
    type Grant is record

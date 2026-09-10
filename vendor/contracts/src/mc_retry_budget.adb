@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Retry_Budget with SPARK_Mode is
    function Valid (P : Policy) return Boolean is
      (P.Window_Ms > 0 and then P.Window_Ms <= 86_400_000

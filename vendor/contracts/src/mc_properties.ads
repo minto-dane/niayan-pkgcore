@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_Text;
 package MC_Properties with SPARK_Mode, Pure is
    Maximum : constant:=64;

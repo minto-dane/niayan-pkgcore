@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 -- Synthetic artifacts and test-only authorization; never a production adapter.
 with Ada.Command_Line; with Ada.Directories; with Interfaces.C;
 with MC_Clock; with MC_Atomic; with MC_FS; with MC_Hex; with MC_Posix; with MC_Runtime; with MC_Log_Format;

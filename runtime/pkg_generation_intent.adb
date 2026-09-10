@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Unchecked_Deallocation; with Interfaces.C;
 with MC_Clock; with MC_Codec; with MC_Posix; with MC_SHA256; with MC_Text;
 with Pkg_Catalog_Retention; with Pkg_Catalog_Store; with Pkg_Deb_Transition;

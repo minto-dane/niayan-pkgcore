@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 -- Disposable synthetic generations and test-only authorities. These fixtures
 -- exercise the real composed guard; they do not attest real native DEB effects,
 -- a physical stop barrier, independent trust floors, or a running boot image.

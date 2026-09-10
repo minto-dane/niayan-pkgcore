@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 -- Synthetic scoped observer; native catalog/original readers remain real.
 with Ada.Command_Line; with Ada.Directories; with Ada.Unchecked_Deallocation; with Ada.Text_IO;
 with Interfaces.C; with System;

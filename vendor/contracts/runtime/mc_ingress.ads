@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 with MC_Signatures; with MC_Authorization; with MC_Replay; with MC_Requests;
 package MC_Ingress with SPARK_Mode => Off is

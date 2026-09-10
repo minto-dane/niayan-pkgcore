@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 # Local source drift check, NOT an authenticated release/provenance check.
 set -eu
 umask 077

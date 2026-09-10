@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Unchecked_Deallocation;
 with MC_FS; with MC_Atomic; with MC_Hex; with MC_SHA256; with MC_Log_Format;
 with Pkg_Root_State; with Pkg_File_Plan;

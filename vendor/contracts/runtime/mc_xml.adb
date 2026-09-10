@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Interfaces.C; with Interfaces.C.Strings; with Ada.Unchecked_Conversion; with Ada.Unchecked_Deallocation;
 package body MC_XML with SPARK_Mode => Off is
    use type MC_Types.Byte;

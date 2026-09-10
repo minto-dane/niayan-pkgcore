@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Change_Set with SPARK_Mode is
    function Valid (S : Set) return Boolean is
    begin

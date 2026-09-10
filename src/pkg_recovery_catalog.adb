@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Recovery_Catalog with SPARK_Mode is
    function Admissible(P : Policy; Item : Point) return Boolean is
      (P.Root_ID/=Zero_Identity and then P.Maximum_Test_Age>0 and then not P.Allow_Data_Downgrade

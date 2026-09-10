@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Pkg_EVR; with Pkg_Versions; with Resolver_Builder;
 package body Pkg_RPM_Resolution with SPARK_Mode is
    use Pkg_Dependency; use type Pkg_Versions.Ordering;

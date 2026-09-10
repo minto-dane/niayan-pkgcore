@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Control with SPARK_Mode is
    function Valid (A : Authority) return Boolean is
       Have_Ops, Have_Security : Boolean := False;

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 package Resolver_Model with SPARK_Mode, Pure is
    -- All identifiers refer to the authenticated, closed universe, not to a

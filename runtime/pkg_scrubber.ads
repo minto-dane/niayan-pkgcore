@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with Pkg_Inventory; with Pkg_Self_Repair;
 package Pkg_Scrubber with SPARK_Mode=>Off is
    procedure Scan(Root_Path,State_Path : String; Baseline : Pkg_Inventory.Manifest;

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Transactions with SPARK_Mode is
    subtype Authorized_Command is Command range Validate_Plan..Record_Restored
      with Static_Predicate => Authorized_Command /= Begin_Reconcile;

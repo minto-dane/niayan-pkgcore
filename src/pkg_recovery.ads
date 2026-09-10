@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Pkg_Transactions;
 package Pkg_Recovery with SPARK_Mode, Pure is
    type Observed_State is (Before_Image, After_Image, Mixed_Image, Unreadable);

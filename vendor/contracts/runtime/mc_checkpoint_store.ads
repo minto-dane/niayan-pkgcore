@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_Checkpoint;
 generic
    with procedure Authorize (Phase : String; Before, After : MC_Checkpoint.Descriptor;

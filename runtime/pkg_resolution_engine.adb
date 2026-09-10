@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Unchecked_Deallocation;
 with MC_SHA256; with Resolver_Wire; with Resolver_Verify;
 package body Pkg_Resolution_Engine with SPARK_Mode => Off is

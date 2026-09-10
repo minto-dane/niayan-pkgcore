@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Text_IO; with MC_Types; use MC_Types; with MC_Text;
 with Pkg_Deb_Versions; with Pkg_Deb_Semantics; with Pkg_File_Plan;
 procedure Run_Deb_Semantics_Tests is

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 with Resolver_Model; use Resolver_Model;
 package Resolver_Builder with SPARK_Mode, Pure is

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Versions with SPARK_Mode is
    function Digit (C : Character) return Boolean is (C in '0' .. '9');
    function Alpha (C : Character) return Boolean is

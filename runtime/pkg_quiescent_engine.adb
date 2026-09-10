@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Contract_Profile;
 package body Pkg_Quiescent_Engine with SPARK_Mode => Off is
    procedure Guard (Root_ID, Transaction_ID : Identity; Plan, Evidence : Digest;

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Diagnostic_Bundle with SPARK_Mode is
    function Base_OK(B:Bundle; Now:Counter) return Boolean is
      (B.Incident_ID/=Zero_Identity and then B.Node_ID/=Zero_Identity and then B.Boot_ID/=Zero_Identity

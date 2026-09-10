@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 """Check exact transition deltas and bindings against independent raw DEB reads."""
 import argparse
 import json

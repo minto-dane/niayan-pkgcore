@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Interfaces;
 package body MC_Codec with SPARK_Mode is
    use type Word; use type Wide;

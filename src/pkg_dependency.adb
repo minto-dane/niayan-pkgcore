@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Pkg_EVR; with Pkg_Versions;
 package body Pkg_Dependency with SPARK_Mode is
    procedure Parse(Text : String; E : out Expression; Status : out Outcome) is

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 -- Debian epoch/upstream/revision order. Independent of libsolv and RPM order.
 package Pkg_Deb_Versions with SPARK_Mode, Pure is
    Max_Length : constant := 512;

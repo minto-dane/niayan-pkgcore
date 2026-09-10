@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Command_Line;
 with MC_Types; use MC_Types;
 with MC_Durable; with Pkg_Journal; with Pkg_Journal_IO; with Pkg_Transactions;

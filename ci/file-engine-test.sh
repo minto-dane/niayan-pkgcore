@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 # Only test-created paths. No installation, root filesystem, services or network.
 set -eu
 umask 077

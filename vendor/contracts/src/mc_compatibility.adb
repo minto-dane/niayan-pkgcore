@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Compatibility with SPARK_Mode is
    use type Wide;
    function Compatible (Local, Peer : Contract_Descriptor) return Boolean is

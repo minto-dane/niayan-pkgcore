@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Codec;
 package body Pkg_RPM_Fields with SPARK_Mode is
    use type MC_Types.Byte;

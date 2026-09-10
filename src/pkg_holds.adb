@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Holds with SPARK_Mode is
    function Valid (C : Catalog) return Boolean is
    begin

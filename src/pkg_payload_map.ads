@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_Text; with Pkg_RPM; with Pkg_File_Plan;
 package Pkg_Payload_Map with SPARK_Mode, Pure is
    Capacity : constant:=4_096;

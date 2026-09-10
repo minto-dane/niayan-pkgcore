@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Hex; with Interfaces.C; with System;
 package body MC_Atomic with SPARK_Mode => Off is
    procedure Random(P : System.Address; N : Interfaces.C.size_t)

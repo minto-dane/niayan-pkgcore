@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Provenance with SPARK_Mode is
    function Valid (S : Statement) return Boolean is
      (S.Package_ID /= Zero_Digest and then S.Source /= Zero_Digest and then S.Build_Recipe /= Zero_Digest

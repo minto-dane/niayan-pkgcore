@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 """Bounded independent linkage oracle for two disposable published generations.
 
 Checks native observations against root.state, the accepted plan, descriptor

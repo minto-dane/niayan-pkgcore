@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_Control;
 package MC_Control_Codec with SPARK_Mode, Pure is
    subtype State_Frame is Bytes (1 .. 256);

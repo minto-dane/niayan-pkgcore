@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 # Run as an unprivileged user in an isolated build workspace. No install target.
 SHELL := /bin/sh
 GPRBUILD ?= gprbuild

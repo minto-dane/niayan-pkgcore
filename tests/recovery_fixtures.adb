@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Recovery_Fixtures with SPARK_Mode => Off is
    procedure Make (P : out MC_Backups.Policy; C : out MC_Backups.Catalog; Status : out Outcome) is
       Members : MC_Backups.Selection; H : Digest;

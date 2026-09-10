@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types;use MC_Types;
 package MC_Config_Receipt with SPARK_Mode,Pure is
    Version : constant:=1;Wire_Size : constant:=512;

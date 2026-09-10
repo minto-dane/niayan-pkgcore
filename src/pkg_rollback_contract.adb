@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Rollback_Contract with SPARK_Mode is
    function Evaluate (C : Contract) return Decision is
    begin

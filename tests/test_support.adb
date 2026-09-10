@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Text_IO;
 package body Test_Support with SPARK_Mode => Off is
    Checks : Natural := 0;

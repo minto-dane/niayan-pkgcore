@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 # Valid synthetic manifests, only in a disposable container and private dirs.
 set -eu
 [ "$(id -u)" -eq 0 ] || exit 78

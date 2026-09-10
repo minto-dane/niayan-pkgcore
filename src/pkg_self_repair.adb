@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Self_Repair with SPARK_Mode is
    use type Pkg_File_Plan.Kind; use type Pkg_File_Plan.State_Domain;
    procedure Build(P : Policy; C : Context; Baseline : Pkg_Inventory.Manifest;

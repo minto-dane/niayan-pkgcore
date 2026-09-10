@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Commissioning with SPARK_Mode is
    procedure Step (S : in out State; C : Command; E : Evidence; Status : out Outcome) is
       N : State := S;

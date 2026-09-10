@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Text; with MC_SHA256;
 package body Pkg_Image_Inspector with SPARK_Mode=>Off is
    use type MC_FS.Entry_Kind; use type MC_FS.Entry_Info; use type Word;

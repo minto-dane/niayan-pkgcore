@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: BSD-3-Clause
  * Thin bounded interface to unmodified upstream codecs. No files or processes.
  * Return: 0 success, 1 malformed/trailing stream, 2 budget, 3 deadline,
  * 4 unsupported codec/check, 5 internal failure. Output length is zero on error.

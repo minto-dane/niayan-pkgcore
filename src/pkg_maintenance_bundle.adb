@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Maintenance_Bundle with SPARK_Mode is
    function Valid (B : Bundle) return Boolean is
    begin

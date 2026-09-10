@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Recovery_Cohort with SPARK_Mode is
    function Quorum (W : Witnesses; Expected : Digest; Needed : Positive) return Boolean is
       Count : Natural := 0;

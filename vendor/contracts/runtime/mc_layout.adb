@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_FS; with MC_Atomic; with MC_Properties; with MC_Paths;
 package body MC_Layout with SPARK_Mode => Off is
    procedure Load(Policy_Directory : String; For_Packages : Boolean; L : out Layout; Status : out Outcome) is

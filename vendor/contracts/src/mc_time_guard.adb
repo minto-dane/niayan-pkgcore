@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Time_Guard with SPARK_Mode is
    function Fresh (S : Stamp; Boot : Identity; Now, Maximum_Age : Counter)
      return Boolean is

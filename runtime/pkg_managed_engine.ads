@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 with MC_Stop_Barrier; with MC_Config_Receipt; with MC_Config_Auth;
 with Resolver_Model; with Resolver_Admission; with Pkg_File_Engine;

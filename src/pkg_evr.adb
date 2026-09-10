@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_EVR with SPARK_Mode is
    use type Pkg_Versions.Ordering;
    procedure Parse(S : String; V : out EVR; Status : out Outcome) is

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Codec;
 package body MC_Witness with SPARK_Mode is
    use type MC_Types.Byte;

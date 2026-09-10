@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Authentic;with MC_Contract_Profile;
 package body MC_Config_Auth with SPARK_Mode=>Off is
    procedure Verify(A : Authority;C : Certificate;Expected : MC_Config_Receipt.Subject;

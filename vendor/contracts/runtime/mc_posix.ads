@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 -- Explicit, not production-audited ABI boundary, Linux x86-64 / glibc, 64-bit off_t/time_t only.
 with Interfaces.C; with System;
 package MC_Posix with SPARK_Mode => Off is

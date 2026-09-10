@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package MC_Paths with SPARK_Mode, Pure is
    -- Lexical policy only. Kernel-side anchored, no-symlink traversal remains mandatory.
    function Safe_Component (Value : String) return Boolean

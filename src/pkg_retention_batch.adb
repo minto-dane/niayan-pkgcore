@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Retention_Batch with SPARK_Mode is
    procedure Plan (P : Policy; C : MC_Backups.Catalog; Count : Natural;
       Requested : MC_Backups.Selection; Delete_Set : out MC_Backups.Selection;

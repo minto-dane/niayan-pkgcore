@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Streams.Stream_IO;
 package body MC_File_IO with SPARK_Mode => Off is
    package IO renames Ada.Streams.Stream_IO;

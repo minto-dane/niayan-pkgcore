@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 with MC_Time_Guard; with Pkg_Inventory; with Pkg_File_Plan;
 package Pkg_Self_Repair with SPARK_Mode, Pure is

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types; with MC_Qualification; with MC_Release; with MC_Signatures;
 package MC_Qualification_Auth with SPARK_Mode => Off is
    Domain : constant String := "MISSION-CORE-QUALIFICATION-v1";

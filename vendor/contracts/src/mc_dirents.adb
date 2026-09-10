@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Dirents with SPARK_Mode is
    use type Byte;
    function Image(N : Name) return String is (N.Data(1..N.Length));

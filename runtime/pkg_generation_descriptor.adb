@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Codec; with MC_Hex; with MC_SHA256; with MC_Text;
 package body Pkg_Generation_Descriptor with SPARK_Mode => Off is
    use type Byte; use type Wide; use type Word; use type Pkg_File_Plan.Shape;

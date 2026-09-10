@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 set -eu
 umask 077
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"

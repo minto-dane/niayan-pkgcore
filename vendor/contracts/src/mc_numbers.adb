@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Numbers with SPARK_Mode is
    procedure Parse(S : String; N : out Counter; Status : out Outcome) is
       D : Counter;

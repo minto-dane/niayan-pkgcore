@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Journal_IO with SPARK_Mode => Off is
    use Pkg_Journal;
    procedure Scan

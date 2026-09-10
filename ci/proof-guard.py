@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 """Bound a trusted Linux proof toolchain; this is not a sandbox.
 
 RLIMIT_AS is an inherited, per-process hard ceiling, including GNATwhy3.

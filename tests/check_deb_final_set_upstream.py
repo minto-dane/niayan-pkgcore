@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 # Qualification only: fixed upstream dpkg, --simulate, empty synthetic payloads,
 # private status files under a disposable root, UID 1000, no maintainer scripts.
 import argparse,json,os,re,subprocess,time

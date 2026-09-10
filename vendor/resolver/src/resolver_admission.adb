@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Resolver_Admission with SPARK_Mode is
    procedure Check (U : Universe; A : Admission; Expected : Binding;
       Expected_Universe, Expected_Source, Expected_Plan, Expected_Reservation : Digest;

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 package MC_Maintenance with SPARK_Mode, Pure is
    type Hold_Kind is (Error_Hold, System_Hold, Security_Hold, Site_Hold, Compatibility_Hold);

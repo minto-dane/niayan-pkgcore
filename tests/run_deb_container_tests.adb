@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 -- Private CAS only. Synthetic ar envelopes do not qualify their tar contents.
 with Ada.Command_Line; with Ada.Strings; with Ada.Strings.Fixed; with Ada.Text_IO;
 with Interfaces.C;

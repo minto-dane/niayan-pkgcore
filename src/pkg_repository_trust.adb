@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body Pkg_Repository_Trust with SPARK_Mode is
    function Check (M : Metadata; A : Anchor; Now : Counter) return Decision is
    begin

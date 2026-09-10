@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 package body MC_Paths with SPARK_Mode is
    function Safe_Component (Value : String) return Boolean is
    begin

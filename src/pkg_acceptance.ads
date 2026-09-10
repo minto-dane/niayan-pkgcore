@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 package Pkg_Acceptance with SPARK_Mode, Pure is
    type Phase is (Trial, Verified, Accepted, Committed, Rejected, Quarantined);

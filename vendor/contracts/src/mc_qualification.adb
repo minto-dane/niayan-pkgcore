@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Codec; with MC_SHA256;
 package body MC_Qualification with SPARK_Mode is
    use type MC_Release.Evidence_State; use type MC_Release.Evidence_Item;

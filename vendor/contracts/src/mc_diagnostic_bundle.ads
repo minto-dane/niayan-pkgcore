@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 package MC_Diagnostic_Bundle with SPARK_Mode, Pure is
    type Evidence_Class is

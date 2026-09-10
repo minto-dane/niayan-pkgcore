@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BSD-3-Clause
 # SUSE/RPM integration source; rpmbuild and the resulting RPM are NOT qualified.
 # Installation neither takes over native RPMDB nor provisions trust or starts services.
 Name: mission-pkgcore
