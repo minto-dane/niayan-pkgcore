@@ -132,4 +132,8 @@ else
 fi
 python3 "$PWD/tests/compare_catalog_store.py" --media "$PWD/tests/fixtures/selected-catalog" --native "$D/catalog-store-native.log" --cas "$D/run_catalog_store_tests/store" --output "$D/catalog-store-oracle.json"
 python3 "$PWD/tests/compare_catalog_retention.py" --media "$PWD/tests/fixtures/selected-catalog" --native "$D/catalog-store-native.log" --cas "$D/run_catalog_store_tests/store" --output "$D/catalog-retention-oracle.json"
+mkdir -p "$D/run_archive_supply_tests"
+mkdir -p "$D/"run_archive_supply_tests/store
+echo 'Running run_archive_supply_tests'
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_archive_supply_tests" "$D/"run_archive_supply_tests/store "$PWD/"tests/fixtures/selected-catalog
 timeout --kill-after=5s 600s python3 "$PWD/tests/check_deb_final_set_upstream.py" --media "$PWD/tests/fixtures/deb-final-set" --work "$D/upstream-endpoint"
