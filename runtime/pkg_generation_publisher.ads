@@ -44,7 +44,7 @@ package Pkg_Generation_Publisher with SPARK_Mode => Off is
    -- This is planning evidence, not supply authentication, a phase schedule or
    -- execution permission. Locks are released on return. Admission must validate
    -- policy, effects and this exact predecessor under its own live reservation.
-   -- Publish requires a v4 manifest carrying native intent and supply policy. The intent
+   -- Publish requires a v4/v5 manifest carrying native intent and supply policy. The intent
    -- is bound through manifest/descriptor to the physical plan checked by the
    -- existing managed authority. Native dependencies, protection and the exact
    -- predecessor are revalidated from originals before any publication effect.
@@ -54,7 +54,7 @@ package Pkg_Generation_Publisher with SPARK_Mode => Off is
    -- current UTC time. Recorded recovery first audits the exact active/accepted
    -- root.state and journal; only then may receipt time be rechecked historically.
    -- Independent current keys/floors/ages and all managed guards still apply.
-   -- Native reads accept retained v2/v3/v4; v1 remains metadata-only. Publish rejects
+   -- Native reads accept retained v2/v3/v4/v5; v1 remains metadata-only. Publish rejects
    -- v1/v2/v3 plans, including their replay: legacy recovery needs its retained
    -- implementation before migration. There is no policy-free fallback path.
    -- Publish requires a finite deadline and checks it in the composed guard.

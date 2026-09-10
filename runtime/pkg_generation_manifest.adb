@@ -1,22 +1,24 @@
 -- SPDX-License-Identifier: MIT
 with Ada.Unchecked_Deallocation;
-with Pkg_Catalog_Retention; with Pkg_Generation_Intent; with Pkg_Supply_Policy;
+with Pkg_Root_Archive; with Pkg_Catalog_Retention; with Pkg_Generation_Intent; with Pkg_Supply_Policy;
 with MC_Codec; with MC_FS; with MC_SHA256; with MC_Text;
 package body Pkg_Generation_Manifest with SPARK_Mode => Off is
    use type Byte; use type Word; use type Wide;
    use type Pkg_File_Plan.Kind; use type Pkg_File_Plan.State_Domain;
    subtype Magic_Bytes is Bytes (1 .. 8);
    function Magic (Format : Format_Kind) return Magic_Bytes is
-     (78, 73, 65, 71, 69, 78, 48, (case Format is when Structural_V1 => 49, when Native_V2 => 50, when Intent_V3 => 51, when Supply_V4 => 52));
+     (78, 73, 65, 71, 69, 78, 48, (case Format is when Structural_V1 => 49, when Native_V2 => 50, when Intent_V3 => 51, when Supply_V4 => 52, when Root_V5 => 53));
    function Prefix_Size (Format : Format_Kind) return Natural is
-     (case Format is when Supply_V4 => Supply_Header_Size, when Intent_V3 => Intent_Header_Size, when others => Header_Size);
+     (case Format is when Root_V5 => Root_Header_Size, when Supply_V4 => Supply_Header_Size, when Intent_V3 => Intent_Header_Size, when others => Header_Size);
    function Valid (M : Manifest) return Boolean is
    begin
       if (M.Format = Structural_V1 and then M.Catalog_Closure /= Zero_Digest)
         or else (M.Format /= Structural_V1 and then M.Catalog_Closure = Zero_Digest)
-        or else (M.Format in Intent_V3 | Supply_V4 and then M.Intent = Zero_Digest)
-        or else (M.Format not in Intent_V3 | Supply_V4 and then M.Intent /= Zero_Digest)
-        or else (M.Format = Supply_V4) /= (M.Supply_Policy /= Zero_Digest)
+        or else (M.Format in Intent_V3 | Supply_V4 | Root_V5 and then M.Intent = Zero_Digest)
+        or else (M.Format not in Intent_V3 | Supply_V4 | Root_V5 and then M.Intent /= Zero_Digest)
+        or else (M.Format in Supply_V4 | Root_V5) /= (M.Supply_Policy /= Zero_Digest)
+        or else (M.Format = Root_V5) /= (M.Root_Archive /= Zero_Digest)
+        or else (M.Format = Root_V5 and then (M.Count /= 1 or else M.Entries /= 3))
         or else M.Stage_ID = Zero_Identity or else M.Transaction_ID = Zero_Identity
         or else M.Stage_ID = M.Transaction_ID or else M.Epoch = 0 or else M.Fence = 0
         or else M.Catalog = Zero_Digest or else M.Effect_Contract = Zero_Digest
@@ -41,8 +43,9 @@ package body Pkg_Generation_Manifest with SPARK_Mode => Off is
       MC_Codec.Put64 (B, 41, Wide (M.Epoch)); MC_Codec.Put64 (B, 49, Wide (M.Fence));
       B (57 .. 88) := M.Catalog; B (89 .. 120) := M.Effect_Contract;
       if M.Format /= Structural_V1 then B (129 .. 160) := M.Catalog_Closure; end if;
-      if M.Format in Intent_V3 | Supply_V4 then B (161 .. 192) := M.Intent; end if;
-      if M.Format = Supply_V4 then B (193 .. 224) := M.Supply_Policy; end if;
+      if M.Format in Intent_V3 | Supply_V4 | Root_V5 then B (161 .. 192) := M.Intent; end if;
+      if M.Format in Supply_V4 | Root_V5 then B (193 .. 224) := M.Supply_Policy; end if;
+      if M.Format = Root_V5 then B (225 .. 256) := M.Root_Archive; end if;
       MC_Codec.Put32 (B, 121, Word (M.Entries)); MC_Codec.Put32 (B, 125, Word (M.Count));
       for I in 1 .. M.Count loop
          B (Pos + 1 .. Pos + 32) := M.Batches (I).Plan;
@@ -59,11 +62,12 @@ package body Pkg_Generation_Manifest with SPARK_Mode => Off is
          for I in 129 .. Header_Size loop if B (I) /= 0 then return; end if; end loop;
       elsif B (1 .. 8) = Magic (Native_V2) then
          Candidate.Format := Native_V2; Candidate.Catalog_Closure := B (129 .. 160);
-      elsif B (1 .. 8) = Magic (Intent_V3) or else B (1 .. 8) = Magic (Supply_V4) then
-         Candidate.Format := (if B (1 .. 8) = Magic (Supply_V4) then Supply_V4 else Intent_V3);
+      elsif B (1 .. 8) = Magic (Intent_V3) or else B (1 .. 8) = Magic (Supply_V4) or else B (1 .. 8) = Magic (Root_V5) then
+         Candidate.Format := (if B (1 .. 8) = Magic (Root_V5) then Root_V5 elsif B (1 .. 8) = Magic (Supply_V4) then Supply_V4 else Intent_V3);
          if B'Length < Prefix_Size (Candidate.Format) then return; end if;
          Candidate.Catalog_Closure := B (129 .. 160); Candidate.Intent := B (161 .. 192);
-         if Candidate.Format = Supply_V4 then Candidate.Supply_Policy := B (193 .. 224); end if;
+         if Candidate.Format in Supply_V4 | Root_V5 then Candidate.Supply_Policy := B (193 .. 224); end if;
+         if Candidate.Format = Root_V5 then Candidate.Root_Archive := B (225 .. 256); end if;
       else Status := Unsupported; return; end if;
       Pos := Prefix_Size (Candidate.Format);
       if MC_Codec.U64 (B, 41) > Wide (Counter'Last) or else MC_Codec.U64 (B, 49) > Wide (Counter'Last)
@@ -82,17 +86,35 @@ package body Pkg_Generation_Manifest with SPARK_Mode => Off is
    end Decode;
    procedure Check_Retention (S : in out MC_Store.Store; M : Manifest;
                               Deadline : Counter; Status : out Outcome) is
+      type Plan_Access is access Pkg_File_Plan.Plan;
+      procedure Free is new Ada.Unchecked_Deallocation (Pkg_File_Plan.Plan, Plan_Access);
+      P : Plan_Access := null; Archive : Digest;
    begin
       Status := Invalid_Input; if not Valid (M) or else Deadline = Counter'Last then return; end if;
       if M.Format = Structural_V1 then Status := Unsupported; return; end if;
       Status := OK;
-      if M.Format = Supply_V4 then
+      if M.Format in Supply_V4 | Root_V5 then
          Pkg_Supply_Policy.Check_Retention (S, M.Supply_Policy, M.Catalog, M.Catalog_Closure, Deadline, Status);
       end if;
-      if Status = OK and then M.Format in Intent_V3 | Supply_V4 then
+      if Status = OK and then M.Format in Intent_V3 | Supply_V4 | Root_V5 then
          Pkg_Generation_Intent.Check_Target (S, M.Intent, M.Catalog, M.Catalog_Closure, Deadline, Status);
       end if;
-      if Status = OK then Pkg_Catalog_Retention.Verify (S, M.Catalog, M.Catalog_Closure, Deadline, Status); end if;
+      if Status = OK and then M.Format = Root_V5 then
+         P := new Pkg_File_Plan.Plan; Load_Plan (S, M, 1, P.all, Status);
+         if Status = OK and then (P.Count /= 3 or else
+           MC_Text.Image (P.Changes (3).Path) /= "tree/root.tar" or else
+           P.Changes (3).After.Node_Kind /= Pkg_File_Plan.Regular) then Status := Conflict; end if;
+         if Status = OK then
+            -- Keep the final deadline-aware native observation after plan I/O.
+            Pkg_Root_Archive.Verify_Target (S, M.Root_Archive, M.Catalog, M.Catalog_Closure,
+               MC_Store.Max_Object_Size, Deadline, Archive, Status);
+         end if;
+         if Status = OK and then P.Changes (3).After.Content /= Archive then Status := Conflict; end if;
+      elsif Status = OK then Pkg_Catalog_Retention.Verify (S, M.Catalog, M.Catalog_Closure, Deadline, Status); end if;
+      Free (P);
+   exception
+      when Storage_Error => Free (P); Status := Exhausted;
+      when others => Free (P); Status := Indeterminate;
    end Check_Retention;
    function Transaction (M : Manifest; Index : Positive) return Identity is
       B : Bytes (1 .. 28) := (others => 0); D : Digest;

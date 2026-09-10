@@ -317,7 +317,7 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
         or else P.Changes (1).After.GID /= Word (MC_Posix.Egid)) then Status := Denied; end if;
       if Status = OK then Read_Manifest (Store, After, M, Status); end if;
       if Status = OK then GM.Check_Retention (Store, M, Deadline, Status); end if;
-      if Status = OK and then M.Format /= GM.Supply_V4 then Status := Unsupported; end if;
+      if Status = OK and then M.Format not in GM.Supply_V4 | GM.Root_V5 then Status := Unsupported; end if;
       if Status = OK and then (M.Effect_Contract /= P.Effect_Contract or else M.Epoch /= P.Epoch or else M.Fence /= P.Fence
         or else M.Transaction_ID = P.Transaction_ID) then Status := Denied; end if;
       if Status = OK then Read_State (Root, State, P.Root_ID, RS, Status); end if;

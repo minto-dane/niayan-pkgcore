@@ -5,7 +5,7 @@ with MC_Clock; with MC_Codec; with MC_FS; with MC_Hex; with MC_Posix; with MC_Ru
 with MC_Types; use MC_Types;
 with Pkg_Catalog_Retention; with Pkg_Catalog_Store; with Pkg_Deb_Metadata;
 with Pkg_Deb_Payload; with Pkg_Payload_Index; with Pkg_Root_Archive;
-with Pkg_Selected_Catalog; with Test_Support; use Test_Support;
+with Root_Archive_Stage_Test; with Pkg_Selected_Catalog; with Test_Support; use Test_Support;
 procedure Run_Root_Archive_Tests with SPARK_Mode => Off is
    package A renames Pkg_Root_Archive; package C renames Pkg_Selected_Catalog;
    package X renames Pkg_Payload_Index; package P renames Pkg_Deb_Payload;
@@ -41,7 +41,9 @@ begin
       A.Build (Store, Zero_Digest, Zero_Digest, (1 => 1), Limit, 0, Manifest, Archive, Status);
       Expect (Status = Denied and then Manifest = Zero_Digest and then Archive = Zero_Digest, "root build refused");
       A.Verify (Store, Zero_Digest, Limit, 0, Archive, Status);
-      Expect (Status = Denied and then Archive = Zero_Digest, "root verify refused"); Report; return;
+      Expect (Status = Denied and then Archive = Zero_Digest, "root verify refused");
+      A.Verify_Target (Store, Zero_Digest, Zero_Digest, Zero_Digest, Limit, 0, Archive, Status);
+      Expect (Status = Denied and then Archive = Zero_Digest, "root bound verify refused"); Report; return;
    end if;
    MC_Store.Initialize (Ada.Command_Line.Argument (1), Store, Status); Need ("private CAS");
    MC_FS.Open_Root (Ada.Directories.Full_Name (Ada.Command_Line.Argument (2)), Media, Status); Need ("media");
@@ -95,6 +97,14 @@ begin
       end loop;
       A.Build (Store, Catalog, Closure, Chosen, Limit, Deadline, Manifest, Archive, Status); Need ("assemble actual payload spans");
       A.Verify (Store, Manifest, Limit, Deadline, Again, Status); Need ("reobserve root archive"); Expect (Again = Archive, "archive identity");
+      A.Verify_Target (Store, Manifest, Catalog, Closure, Limit, Deadline, Again, Status); Need ("enclosing target verification");
+      Expect (Again = Archive, "target-linked root identity");
+      A.Verify_Target (Store, Manifest, Archive, Closure, Limit, Deadline, Again, Status);
+      Expect (Status = Conflict and then Again = Zero_Digest, "foreign catalog cannot carry this root");
+      A.Verify_Target (Store, Manifest, Catalog, Archive, Limit, Deadline, Again, Status);
+      Expect (Status = Conflict and then Again = Zero_Digest, "foreign closure cannot carry this root");
+      A.Verify_Target (Store, Manifest, Zero_Digest, Closure, Limit, Deadline, Again, Status);
+      Expect (Status = Invalid_Input and then Again = Zero_Digest, "enclosing catalog cannot be omitted");
       High := Chosen;
       A.Build (Store, Catalog, Closure, High, Limit, Deadline, Again, Other, Status); Need ("highest array bound");
       Expect (Again = Manifest and then Other = Archive, "selection bounds do not alter bytes");
@@ -136,6 +146,7 @@ begin
       A.Verify (Store, Manifest, Limit, Deadline, Again, Status); Need ("verify after explicit restoration");
       Expect (Again = Archive, "restored archive unchanged");
    end;
+   Root_Archive_Stage_Test.Run (Store, Ada.Command_Line.Argument (1), Catalog, Closure, Manifest, Archive, Packages, Deadline);
    MC_Store.Close (Store); MC_FS.Close (CAS_Root); MC_FS.Close (Media); Report;
 exception when others => MC_Store.Close (Store); MC_FS.Close (CAS_Root); MC_FS.Close (Media); raise;
 end Run_Root_Archive_Tests;

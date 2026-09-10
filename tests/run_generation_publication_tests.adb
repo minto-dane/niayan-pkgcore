@@ -13,7 +13,7 @@ with MC_Types; use MC_Types;
 with Pkg_Catalog_Retention; with Pkg_Catalog_Store; with Pkg_Deb_Metadata; with Pkg_Deb_Payload;
 with Pkg_Payload_Index; with Pkg_Selected_Catalog;
 with Pkg_Deb_Final_Set; with Pkg_Deb_Transition;
-with Pkg_Archive_Supply; with Pkg_Supply_Map; with Pkg_Supply_Policy;
+with Pkg_Root_Archive; with Pkg_Archive_Supply; with Pkg_Supply_Map; with Pkg_Supply_Policy;
 with Pkg_File_Plan; with Pkg_Generation_Descriptor; with Pkg_Generation_Manifest; with Pkg_Generation_Intent;
 with Pkg_Generation_Publisher; with Pkg_Generation_Stage; with Pkg_Managed_Engine; with Pkg_Root_State;
 with Resolver_Model; with Resolver_Admission; with Resolver_Wire;
@@ -49,6 +49,9 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    Fixture_Path : constant String := (if Ada.Command_Line.Argument_Count >= 5 then Ada.Command_Line.Argument (5)
       else Ada.Directories.Current_Directory & "/tests/fixtures/selected-catalog");
    Laboratory : constant Boolean := Ada.Command_Line.Argument_Count >= 6;
+   Root_Laboratory : constant Boolean := Ada.Command_Line.Argument_Count = 6
+      and then Ada.Command_Line.Argument (6) = "root-archive";
+   Root_Tar : Digest := Zero_Digest; Root_Tar_Size : Counter := 0;
    First_Plan : Digest; First_Tx : Identity;
    type Plan_Access is access FP.Plan;
    P, Batch : constant Plan_Access := new FP.Plan;
@@ -541,7 +544,7 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       type Metadata_Access is access Pkg_Deb_Metadata.Observation;
       Metadata : Metadata_Access := new Pkg_Deb_Metadata.Observation;
       procedure Free is new Ada.Unchecked_Deallocation (Pkg_Deb_Metadata.Observation, Metadata_Access);
-      Name : constant String := (if File_Name /= "" then File_Name elsif N = 1 then "empty.deb" else "consumer-upgrade.deb");
+      Name : constant String := (if File_Name /= "" then File_Name elsif Root_Laboratory then "base.deb" elsif N = 1 then "empty.deb" else "consumer-upgrade.deb");
    begin
       MC_FS.Open_Root (Ada.Directories.Full_Name (Fixture_Path), Media, S); Need ("native fixture media");
       MC_FS.Open_Read (Media, Name, File, S); Need ("native fixture original");
@@ -698,6 +701,20 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
          Pkg_Generation_Intent.Prepare (Store, Root_ID, Before, First_Closure, Catalog, M.Catalog_Closure,
             "amd64", Enabled, Observation_Deadline, M.Intent, Ignored, S); Need ("native publication intent");
          Build_Supply;
+         if Root_Laboratory then
+            declare Value : NC.Catalog; Payload : PX.Index; File : MC_FS.File; Info : MC_FS.Entry_Info; begin
+               M.Format := GM.Root_V5;
+               Pkg_Catalog_Store.Load (Store, Catalog, Observation_Deadline, Value, Payload, S); Need ("root catalog selection");
+               declare Chosen : Pkg_Root_Archive.Selection (1 .. PX.Path_Count (Payload)); begin
+                  Expect (PX.Path_Count (Payload) = PX.Claim_Count (Payload), "root fixture has one owner per path");
+                  for I in Chosen'Range loop Chosen (I) := I; end loop;
+                  Pkg_Root_Archive.Build (Store, Catalog, M.Catalog_Closure, Chosen, MC_Store.Max_Object_Size,
+                     Observation_Deadline, M.Root_Archive, Root_Tar, S); Need ("root candidate archive");
+               end;
+               MC_Store.Open_Object (Store, Root_Tar, File, S); Need ("root archive observation");
+               MC_FS.Info (File, Info, S); MC_FS.Close (File); Need ("root archive length"); Root_Tar_Size := Info.Size;
+            end;
+         end if;
          if Damage /= Unchanged then
             MC_Store.Read_Object (Store, M.Intent, Wire, N_Bytes, S); Need ("retained intent fixture bytes");
             case Damage is
@@ -723,6 +740,11 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
          UID => Word (MC_Posix.Euid), GID => Word (MC_Posix.Egid), Xattrs => Attrs, others => <>);
       MC_Text.Set (Batch.Changes (3).Path, "tree/version", S); Need ("fixture payload path");
       Batch.Changes (3).After := Batch.Changes (1).After; Batch.Changes (3).After.Mode := 8#644#;
+      if Root_Laboratory then
+         MC_Text.Set (Batch.Changes (3).Path, "tree/root.tar", S); Need ("root archive stage path");
+         Batch.Changes (3).After.Content := Root_Tar; Batch.Changes (3).After.Size := Root_Tar_Size;
+         Batch.Changes (3).After.Mode := 8#400#;
+      end if;
       FP.Encode (Batch.all, B.all, N_Bytes, S); Need ("encode private batch");
       MC_Store.Put (Store, B (1 .. N_Bytes), M.Batches (1).Plan, S); Need ("save private batch");
       M.Batches (1).Receipt := Receipt;
@@ -917,7 +939,7 @@ begin
    end;
    if Laboratory and then Ada.Command_Line.Argument (6) = "recover" then Recover_Laboratory; return; end if;
    if Laboratory then
-      Expect (Laboratory and then Ada.Command_Line.Argument_Count = 6 and then Ada.Command_Line.Argument (6) = "checkpoint",
+      Expect (Laboratory and then Ada.Command_Line.Argument_Count = 6 and then Ada.Command_Line.Argument (6) in "checkpoint" | "root-archive",
          "explicit disposable lab checkpoint mode");
    end if;
    MC_Store.Initialize (Store_Path, Store, S); Need ("initialize fixture CAS");
@@ -966,6 +988,40 @@ begin
       MC_Atomic.Write (State, "root.state", Frame, False, S); Need ("restore exact initial state");
    end; MC_FS.Close (State);
    Read_Current; Expect (S = Stale and then Current = GD.Empty, "no fictitious initial generation");
+   if Root_Laboratory then
+      Complete_Stage (False);
+      declare CAS : MC_FS.Root; Info : MC_FS.Entry_Info;
+         type Hashes is array (Positive range <>) of Digest;
+         function Object_Path (Hash : Digest) return String is
+            Hex : constant String := MC_Hex.Encode (Hash);
+         begin return "objects/" & Hex (1 .. 2) & "/" & Hex (3 .. 64); end Object_Path;
+      begin
+         MC_FS.Open_Root (Store_Path, CAS, S, Private_Only => True); Need ("root publication fault store");
+         for Object of Hashes'(M.Root_Archive, Root_Tar) loop
+            MC_FS.Rename (CAS, Object_Path (Object), "held-published-root", True, S); Need ("hold required root object");
+            Publish; Expect (S /= OK and then S /= Conflict, "publication requires retained root object");
+            MC_FS.Stat (CAS, Object_Path (Object), Info, S); Need ("observe absent publication root object");
+            Expect (Info.Kind = MC_FS.Absent, "publication does not recreate missing root evidence");
+            MC_FS.Rename (CAS, "held-published-root", Object_Path (Object), True, S); Need ("restore root publication input");
+         end loop;
+         Inject := Commit_Denied; Publish; Expect (S = Denied, "root commit still revocable after apply");
+         Read_Current; Expect (S = Indeterminate and then Current = GD.Empty, "uncommitted root is not current");
+         MC_FS.Rename (CAS, Object_Path (M.Root_Archive), "held-published-root", True, S); Need ("hold root recovery input");
+         Inject := None; Publish; Expect (S /= OK, "recovery cannot bypass missing root manifest");
+         MC_FS.Rename (CAS, "held-published-root", Object_Path (M.Root_Archive), True, S); Need ("restore root recovery input");
+         Supply_Now := 2_000; Publish; Need ("recorded root recovery after supply expiry");
+         Read_Native (Observation_Deadline); Need ("accepted native root generation"); Expect (Current = After, "root generation descriptor exact");
+         MC_FS.Rename (CAS, Object_Path (M.Root_Archive), "held-published-root", True, S); Need ("hold accepted root retention");
+         Read_Native (Observation_Deadline); Expect (S /= OK, "accepted reader requires root retention"); Native_Hidden;
+         MC_FS.Rename (CAS, "held-published-root", Object_Path (M.Root_Archive), True, S); Need ("restore accepted root retention");
+         MC_FS.Close (CAS);
+      end;
+      Read_Native (Observation_Deadline); Need ("restored accepted root generation");
+      Ada.Text_IO.Put_Line ("ROOT_GENERATION " & MC_Hex.Encode (Manifest_Hash));
+      Ada.Text_IO.Put_Line ("ROOT_PLAN " & MC_Hex.Encode (Plan_Hash));
+      Ada.Text_IO.Put_Line ("ROOT_ARCHIVE " & MC_Hex.Encode (Root_Tar));
+      Report; return;
+   end if;
    if Laboratory then
       Complete_Stage (False); Inject := Commit_Denied; Publish;
       Expect (S = Denied, "lab leaves an actual admitted transaction before commit");

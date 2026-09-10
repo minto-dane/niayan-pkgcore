@@ -151,4 +151,5 @@ else
   exit 1
 fi
 python3 "$PWD/tests/compare_root_archive.py" --media "$PWD/tests/fixtures/root-archive" --native "$D/root-archive-native.log" --cas "$D/run_root_archive_tests/store" --output "$D/root-archive-oracle.json"
+timeout --kill-after=5s 610s python3 "$PWD/tests/check_root_publication.py" --driver "$PWD/build/test-bin/run_generation_publication_tests"
 timeout --kill-after=5s 600s python3 "$PWD/tests/check_deb_final_set_upstream.py" --media "$PWD/tests/fixtures/deb-final-set" --work "$D/upstream-endpoint"

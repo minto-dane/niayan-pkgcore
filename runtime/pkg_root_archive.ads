@@ -11,6 +11,9 @@ package Pkg_Root_Archive with SPARK_Mode => Off is
       Manifest, Archive : out Digest; Status : out Outcome);
    procedure Verify (Store : in out MC_Store.Store; Manifest : Digest;
       Limit, Deadline : Counter; Archive : out Digest; Status : out Outcome);
+   procedure Verify_Target (Store : in out MC_Store.Store; Manifest, Catalog, Closure : Digest;
+      Limit, Deadline : Counter; Archive : out Digest; Status : out Outcome);
+   -- Additionally requires the exact enclosing generation's catalog and closure.
    -- Assemble real payload tar records into one root archive in the existing
    -- CAS. Every canonical path needs one explicit claim index, in path order.
    -- Shared-path choices are recorded, not inferred from package input order.

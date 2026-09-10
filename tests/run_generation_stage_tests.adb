@@ -159,7 +159,7 @@ begin
       Expect (S = Invalid_Input and then Readback = GM.Manifest'(others => <>), "native header cannot be relabeled as v1");
       Damaged := Wire; Damaged (129 .. 160) := Zero_Digest; GM.Decode (Damaged (1 .. Size), Readback, S);
       Expect (S = Invalid_Input and then Readback = GM.Manifest'(others => <>), "missing closure clears decoded output");
-      Damaged := Wire; Damaged (8) := 53; GM.Decode (Damaged (1 .. Size), Readback, S);
+      Damaged := Wire; Damaged (8) := 54; GM.Decode (Damaged (1 .. Size), Readback, S);
       Expect (S = Unsupported and then Readback = GM.Manifest'(others => <>), "unknown profile cannot downgrade");
       Native.Format := GM.Structural_V1; Expect (not GM.Valid (Native), "v1 must keep reserved bytes zero");
       GM.Check_Retention (Store, M, Deadline, S); Expect (S = Unsupported, "v1 is not native retention evidence");

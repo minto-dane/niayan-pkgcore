@@ -230,7 +230,7 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
       when Storage_Error => Cleanup; Manifest := Zero_Digest; Archive := Zero_Digest; Status := Exhausted;
       when others => Cleanup; Manifest := Zero_Digest; Archive := Zero_Digest; Status := Indeterminate;
    end Build;
-   procedure Verify (Store : in out MC_Store.Store; Manifest : Digest;
+   procedure Verify_Bound (Store : in out MC_Store.Store; Manifest, Catalog, Closure : Digest;
       Limit, Deadline : Counter; Archive : out Digest; Status : out Outcome) is
       Wire : Buffer_Access := null; File : MC_FS.File; Info : MC_FS.Entry_Info;
       Used, Count : Natural; Expected, Actual : Digest;
@@ -255,6 +255,10 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
       for I in 0 .. 3 loop
          if Wire (9 + 32 * I .. 40 + 32 * I) = Zero_Digest then raise Interrupted; end if;
       end loop;
+      if (Catalog /= Zero_Digest and then Wire (9 .. 40) /= Catalog)
+        or else (Closure /= Zero_Digest and then Wire (41 .. 72) /= Closure) then
+         Status := Conflict; Check;
+      end if;
       Tick (Deadline, Status); Check;
       MC_Store.Open_Object (Store, Wire (105 .. 136), File, Status); Check;
       MC_FS.Info (File, Info, Status); Check;
@@ -275,5 +279,15 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
       when Interrupted => Cleanup; Archive := Zero_Digest;
       when Storage_Error => Cleanup; Archive := Zero_Digest; Status := Exhausted;
       when others => Cleanup; Archive := Zero_Digest; Status := Indeterminate;
-   end Verify;
+   end Verify_Bound;
+   procedure Verify (Store : in out MC_Store.Store; Manifest : Digest;
+      Limit, Deadline : Counter; Archive : out Digest; Status : out Outcome) is
+   begin Verify_Bound (Store, Manifest, Zero_Digest, Zero_Digest, Limit, Deadline, Archive, Status); end Verify;
+   procedure Verify_Target (Store : in out MC_Store.Store; Manifest, Catalog, Closure : Digest;
+      Limit, Deadline : Counter; Archive : out Digest; Status : out Outcome) is
+   begin
+      Archive := Zero_Digest; Status := Denied; if MC_Posix.Euid = 0 then return; end if;
+      Status := Invalid_Input; if Catalog = Zero_Digest or else Closure = Zero_Digest then return; end if;
+      Verify_Bound (Store, Manifest, Catalog, Closure, Limit, Deadline, Archive, Status);
+   end Verify_Target;
 end Pkg_Root_Archive;

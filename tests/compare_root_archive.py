@@ -111,6 +111,16 @@ def main():
                   archive_bytes=len(output), entry_types=kinds,
                   exact_original_spans=True, hardlink_targets_precede_links=True,
                   physical_extraction=False, production_authorization=False)
+    generations = [line.split()[1] for line in lines if line.startswith('GENERATION_MANIFEST ')]
+    if generations:
+        generation_id, = generations
+        generation = object_bytes(generation_id)
+        assert len(generation) == 320 and generation[:8] == b'NIAGEN05'
+        assert generation[224:256].hex() == manifest_id
+        assert generation[56:88] == wire[8:40] and generation[128:160] == wire[40:72]
+        assert (args.cas / 'pins' / generation[24:40].hex()).read_bytes().hex() == generation_id
+        assert (args.cas.parent / 'archive-stage-root/tree/root.tar').read_bytes() == output
+        report.update(generation_manifest=generation_id, generation_pin=True, staged_archive_exact=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')
     print('PASS root archive original-span oracle:', len(picked), 'paths')
 
