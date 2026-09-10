@@ -12,6 +12,10 @@ package Pkg_Conffile_Choice with SPARK_Mode => Off is
       Object, Permission_Override : Digest := Zero_Digest;
       Mode, UID, GID : Word := 0;
    end record;
+   type Scope is record
+      Root_ID, Transaction : Identity := Zero_Identity;
+      Context, Prior_Original, Incoming_Original : Digest := Zero_Digest;
+   end record;
    type Proposal is new Ada.Finalization.Limited_Controlled with private;
    procedure Prepare (Store : in out MC_Store.Store; Root_FD : Integer;
       Root_ID, Transaction : Identity; Context : Digest; Mode : Operation;
@@ -28,6 +32,10 @@ package Pkg_Conffile_Choice with SPARK_Mode => Off is
    procedure Read_Effects (Store : MC_Store.Store; Value : in out Proposal;
       Decision, Closure : Digest; Deadline : Counter;
       Target, Backup : out File_Effect; Status : out Outcome);
+   procedure Read_Scope (Store : MC_Store.Store; Value : in out Proposal;
+      Decision, Closure : Digest; Deadline : Counter; Binding : out Scope; Status : out Outcome);
+   -- Same live recheck as Read_Effects; a retained caller assertion, not proof
+   -- of root identity or authenticated intent. Failed reads clear Binding.
    -- Rechecks before returning desired entries. No_File at Target.Path means
    -- desired absence; empty Backup.Path means no backup entry. Object is the
    -- full local observation or original vendor DEB, never a truncated attribute

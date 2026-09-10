@@ -36,9 +36,16 @@ def fixtures():
         ('nul', b'/etc/bad\x00.conf\n', regular, False),
         ('empty-component', b'/etc//fixture.conf\n', regular, False),
     ]
+    layout = [('./', b'', tarfile.DIRTYPE, ''), ('./etc', b'', tarfile.DIRTYPE, ''),
+              ('./etc/fixture.conf', b'second\n', tarfile.REGTYPE, '')]
+    cases += [
+        ('layout', b'/etc/fixture.conf\n', layout, True),
+        ('layout-collision', b'/etc/fixture.conf\n', layout + [('./etc/fixture.conf.save', b'packaged', tarfile.REGTYPE, '')], True),
+        ('layout-linked', b'/etc/fixture.conf\n', layout + [('./etc/alias', b'', tarfile.LNKTYPE, './etc/fixture.conf')], True),
+    ]
     control = b'Package: conf-fixture\nVersion: 1\nArchitecture: all\nMaintainer: Fixture <fixture@example.invalid>\nDescription: conffile fixture\n'
     for name, declarations, files, accepted in cases:
-        metadata = [('./control', control.replace(b'Version: 1', b'Version: 2') if name in ('updated', 'omitted', 'remove-current') else control, tarfile.REGTYPE, '')]
+        metadata = [('./control', control.replace(b'Version: 1', b'Version: 2') if name in ('updated', 'omitted', 'remove-current') or name.startswith('layout') else control, tarfile.REGTYPE, '')]
         if declarations is not None:
             metadata.append(('./conffiles', declarations, tarfile.REGTYPE, ''))
         raw = b'!<arch>\n'+member('debian-binary', b'2.0\n')+member('control.tar', tar(metadata))+member('data.tar', tar(files))

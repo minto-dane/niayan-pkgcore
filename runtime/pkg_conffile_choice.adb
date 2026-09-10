@@ -15,6 +15,7 @@ package body Pkg_Conffile_Choice with SPARK_Mode => Off is
       Reservation : Integer := -1;
       Limit, Deadline : Counter := 0;
       Mode : T.Operation := T.Install_Upgrade;
+      Binding : Scope;
       Path : P.Byte_Strings.Bounded_String;
       Prior, Incoming : T.Image;
       Local_Mode, Local_UID, Local_GID : Word := 0;
@@ -111,6 +112,7 @@ package body Pkg_Conffile_Choice with SPARK_Mode => Off is
       Tick (Deadline, Status); Need;
       Value.State := new Data; Value.State.Deadline := Deadline; Value.State.Limit := Limit;
       Value.State.Reservation := MC_Store.Native_Reservation (Store);
+      Value.State.Binding := (Root_ID, Transaction, Context, Prior_Original, Incoming_Original);
       Value.State.Root := MC_Posix.Dup (Interfaces.C.int (Root_FD), 1030, 3);
       if Value.State.Root < 0 then Status := IO_Error; raise Interrupted; end if;
       Value.State.Path := P.Byte_Strings.To_Bounded_String (Path);
@@ -181,6 +183,13 @@ package body Pkg_Conffile_Choice with SPARK_Mode => Off is
       Recheck (Store, Value, Decision, Closure, Deadline, Status);
       if Status = OK then Target := Value.State.Target_Effect; Backup := Value.State.Backup_Effect; end if;
    end Read_Effects;
+   procedure Read_Scope (Store : MC_Store.Store; Value : in out Proposal;
+      Decision, Closure : Digest; Deadline : Counter; Binding : out Scope; Status : out Outcome) is
+   begin
+      Binding := (others => <>);
+      Recheck (Store, Value, Decision, Closure, Deadline, Status);
+      if Status = OK then Binding := Value.State.Binding; end if;
+   end Read_Scope;
    procedure Resolve (Store : in out MC_Store.Store; Value : in out Proposal;
       Expected : Digest; Selection : T.Choice; Backup_Path : String; Deadline : Counter;
       Decision, Closure : out Digest; Status : out Outcome) is

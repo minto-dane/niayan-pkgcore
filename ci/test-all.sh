@@ -190,5 +190,10 @@ mkdir -p "$D/"run_conffile_observation_tests/store
 mkdir -p "$D/"run_conffile_observation_tests/root
 echo 'Running run_conffile_observation_tests'
 timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_conffile_observation_tests" "$D/"run_conffile_observation_tests/store "$D/"run_conffile_observation_tests/root
+mkdir -p "$D/run_root_configuration_tests"
+mkdir -p "$D/"run_root_configuration_tests/store
+mkdir -p "$D/"run_root_configuration_tests/root
+echo 'Running run_root_configuration_tests'
+timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_root_configuration_tests" "$D/"run_root_configuration_tests/store "$D/"run_root_configuration_tests/root "$PWD/"tests/fixtures/conffiles
 timeout --kill-after=5s 610s python3 "$PWD/tests/check_root_publication.py" --driver "$PWD/build/test-bin/run_generation_publication_tests"
 timeout --kill-after=5s 600s python3 "$PWD/tests/check_deb_final_set_upstream.py" --media "$PWD/tests/fixtures/deb-final-set" --work "$D/upstream-endpoint"

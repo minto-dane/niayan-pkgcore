@@ -103,5 +103,20 @@
     "filename": "empty-component.deb",
     "sha256": "965289ec8440a1de0195b1740c0e6de7613c3c668f6413f1e2288d781c8e6316",
     "accepted": false
+  },
+  {
+    "filename": "layout.deb",
+    "sha256": "006dc15c47275b6a21094e5d4227cd72b4842e69076f4ff2a02d1f52fd43aef1",
+    "accepted": true
+  },
+  {
+    "filename": "layout-collision.deb",
+    "sha256": "60c5b58fe40c11aca4f2b4f731c067f5d46907c007f64ffeb9287323035db930",
+    "accepted": true
+  },
+  {
+    "filename": "layout-linked.deb",
+    "sha256": "5d6692bd70640dca6e94d1855bdbc2aaeac7eba070e16d1b38ae496f300c3dad",
+    "accepted": true
   }
 ]
