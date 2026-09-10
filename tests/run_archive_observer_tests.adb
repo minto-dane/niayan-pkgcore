@@ -6,7 +6,7 @@ with MC_Types; use MC_Types;
 with Pkg_Archive_Observer; with Pkg_Archive_Supply;
 with Pkg_Catalog_Retention; with Pkg_Catalog_Store; with Pkg_Deb_Payload;
 with Pkg_Payload_Index; with Pkg_Selected_Catalog; with Pkg_Supply_Map; with Pkg_Supply_Policy;
-with MC_Text; with Pkg_Site_Supply; with Pkg_Supply_Planner;
+with Pkg_Site_Supply; with Pkg_Supply_Planner;
 with Test_Support; use Test_Support;
 procedure Run_Archive_Observer_Tests with SPARK_Mode => Off is
    use type Word; use type Interfaces.C.unsigned;
@@ -101,8 +101,8 @@ procedure Run_Archive_Observer_Tests with SPARK_Mode => Off is
       Pkg_Catalog_Retention.Prepare (Store, Target.Catalog, Deadline, Target.Closure, Status); Need ("planning closure");
       Requests (1) := (Request_ID => ID, Scope => Trusted.Scope, Original => Original, Control => Control,
          InRelease => InRelease, Index => Index, Keyring => Keyring, others => <>);
-      MC_Text.Set (Requests (1).Index_Path, Ada.Command_Line.Argument (4), Status); Need ("planning index path");
-      MC_Text.Set (Requests (1).Deb_Path, Ada.Command_Line.Argument (5), Status); Need ("planning DEB path");
+      Requests (1).Index_Path := Pkg_Deb_Payload.Byte_Strings.To_Bounded_String (Ada.Command_Line.Argument (4));
+      Requests (1).Deb_Path := Pkg_Deb_Payload.Byte_Strings.To_Bounded_String (Ada.Command_Line.Argument (5));
       Pkg_Site_Supply.Open_Planning ("/etc/niaos/supply", "/var/lib/niaos/trust", Target.Root_ID, Tx, Deadline, Site, Status);
       Need ("planning phase boundary");
       Pkg_Site_Supply.Observe (Site, Target.Root_ID, Tx, Zero_Digest, Zero_Digest, Snapshot, Status);
@@ -152,6 +152,13 @@ begin
    Held := MC_Store.Native_Reservation (Store); Exclusion;
    MC_FS.Open_Root (Ada.Directories.Full_Name (Ada.Command_Line.Argument (2)), Media, Status); Need ("media");
    if Ada.Command_Line.Argument_Count = 2 then
+      declare
+         R : Pkg_Supply_Planner.Request;
+         UTF8 : constant String := "pool/" & Character'Val (16#E6#) & Character'Val (16#97#) & Character'Val (16#A5#) & ".deb";
+      begin
+         R.Deb_Path := Pkg_Deb_Payload.Byte_Strings.To_Bounded_String (UTF8);
+         Expect (Pkg_Deb_Payload.Byte_Strings.To_String (R.Deb_Path) = UTF8, "planner preserves UTF-8 path bytes");
+      end;
       Import ("empty.deb", Original);
       Control := ID; InRelease := ID; Index := ID; Keyring := ID;
       Call (0); Expect (Status = Stale, "expired deadline refused");

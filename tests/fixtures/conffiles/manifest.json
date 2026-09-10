@@ -1,0 +1,92 @@
+[
+  {
+    "filename": "normal.deb",
+    "sha256": "1278e8099ebf2e5e10dca4ffea5501bed2b25f0ccb3973c5d988c9dad0f682eb",
+    "accepted": true
+  },
+  {
+    "filename": "absent.deb",
+    "sha256": "4c54a8bc6a18757829a12c463c91eabed3ecc0c4498932210cf4a13671cce2dd",
+    "accepted": true
+  },
+  {
+    "filename": "empty.deb",
+    "sha256": "ce3071530d51abd2f4b5cd17dd69beadea6508cfb1a4d43132ea6231198d51c0",
+    "accepted": true
+  },
+  {
+    "filename": "missing.deb",
+    "sha256": "88810305dfd7cb52cc946f7ff3e3c500864d881a5539a6cdd1388c3ee103e48c",
+    "accepted": true
+  },
+  {
+    "filename": "remove.deb",
+    "sha256": "9e6fc838445df4b8753c3f17010e7b7cfe011e4327bfc8025f6b3c1c8f4356eb",
+    "accepted": true
+  },
+  {
+    "filename": "no-final-newline.deb",
+    "sha256": "2a04c80d105d76696dd762d80725b08410c990cd7b8bf0cf3a092e96ca15f6d4",
+    "accepted": true
+  },
+  {
+    "filename": "space-name.deb",
+    "sha256": "04a7ed710722cf1544e0c78e2b62ea0685c877def60e36fcda4d64ddadaaa301",
+    "accepted": true
+  },
+  {
+    "filename": "byte-name.deb",
+    "sha256": "6dd8883ac48d7ecd0da6517c2d626b0827f7e7817ea7a5edab2990e9800d133b",
+    "accepted": true
+  },
+  {
+    "filename": "symbolic.deb",
+    "sha256": "41bab01108c810fbff76993222ffb1772e2ea0c39ac0b9dc43800529172b8939",
+    "accepted": true
+  },
+  {
+    "filename": "blank.deb",
+    "sha256": "6fcbf38cb7a874215a8184b4c02ea332138906009ffed2111c7b7068a351195b",
+    "accepted": false
+  },
+  {
+    "filename": "whitespace.deb",
+    "sha256": "0164c484a2dfffea96dddf502518b19a441331cd82d3a66639b417060d5ba717",
+    "accepted": false
+  },
+  {
+    "filename": "duplicate.deb",
+    "sha256": "ef1719a67e1abdd576bfd0cfcb483075ee10b08ad56fd6c0799d53e4fdea4ec2",
+    "accepted": false
+  },
+  {
+    "filename": "remove-present.deb",
+    "sha256": "5c1eb8bb1d9ee90e9385b8759a2667ef72772a5bd32febf1fff9b9ee69921f04",
+    "accepted": false
+  },
+  {
+    "filename": "unknown-flag.deb",
+    "sha256": "9c51553db5be294fefd4a59692e92d780fccf57a1b417208c2bf7e520fe4fb41",
+    "accepted": false
+  },
+  {
+    "filename": "relative.deb",
+    "sha256": "c216d392590d9b1f36e67044a607918e0d8bb7e9aafe6c428e709ed395a7aaa1",
+    "accepted": false
+  },
+  {
+    "filename": "traversal.deb",
+    "sha256": "891fb8eaadefa27f50cf2c35ce50fdec02f6d8b3af081911a4c3d83153efdf89",
+    "accepted": false
+  },
+  {
+    "filename": "nul.deb",
+    "sha256": "ea212ace79549843e11630f25541edeae2f5ea9e85dbffe6d2445e0b2842f65c",
+    "accepted": false
+  },
+  {
+    "filename": "empty-component.deb",
+    "sha256": "965289ec8440a1de0195b1740c0e6de7613c3c668f6413f1e2288d781c8e6316",
+    "accepted": false
+  }
+]

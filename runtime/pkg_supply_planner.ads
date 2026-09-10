@@ -1,10 +1,10 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
-with MC_Text; with MC_Store; with Pkg_Site_Supply; with Pkg_Supply_Map;
+with MC_Store; with Pkg_Site_Supply; with Pkg_Supply_Map; with Pkg_Deb_Payload;
 package Pkg_Supply_Planner with SPARK_Mode => Off is
    type Request is record
       Request_ID, Scope, Original, Control, InRelease, Index, Keyring : Digest := Zero_Digest;
-      Index_Path, Deb_Path : MC_Text.Value := MC_Text.Empty;
+      Index_Path, Deb_Path : Pkg_Deb_Payload.Byte_Strings.Bounded_String;
    end record;
    type Requests is array (Positive range <>) of Request;
    procedure Prepare (Store : in out MC_Store.Store; Site : in out Pkg_Site_Supply.Session;

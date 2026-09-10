@@ -39,8 +39,8 @@ package body Pkg_Supply_Planner with SPARK_Mode => Off is
          declare R : Request renames Items (I); begin
             if R.Request_ID = Zero_Digest or else R.Scope = Zero_Digest or else R.Original = Zero_Digest
               or else R.Control = Zero_Digest or else R.InRelease = Zero_Digest or else R.Index = Zero_Digest
-              or else R.Keyring = Zero_Digest or else MC_Text.Length (R.Index_Path) = 0
-              or else MC_Text.Length (R.Deb_Path) = 0
+              or else R.Keyring = Zero_Digest or else Pkg_Deb_Payload.Byte_Strings.Length (R.Index_Path) = 0
+              or else Pkg_Deb_Payload.Byte_Strings.Length (R.Deb_Path) = 0
               or else (I > Items'First and then Items (I - 1).Original >= R.Original) then raise Interrupted; end if;
          end;
       end loop;
@@ -55,7 +55,7 @@ package body Pkg_Supply_Planner with SPARK_Mode => Off is
          Request_Deadline := (if Deadline - Boot > 125_000 then Boot + 125_000 else Deadline);
          Pkg_Archive_Observer.Observe (Store, Items (I).Request_ID, Items (I).Original, Items (I).Control,
             Items (I).InRelease, Items (I).Index, Items (I).Keyring,
-            MC_Text.Image (Items (I).Index_Path), MC_Text.Image (Items (I).Deb_Path), Observer_UID,
+            Pkg_Deb_Payload.Byte_Strings.To_String (Items (I).Index_Path), Pkg_Deb_Payload.Byte_Strings.To_String (Items (I).Deb_Path), Observer_UID,
             Current.Trusted (Selected), Request_Deadline, Receipt, Policy, Status); Check;
          Sources (I - Items'First + 1) := (Items (I).Original, Items (I).Control, Receipt);
       end loop;
