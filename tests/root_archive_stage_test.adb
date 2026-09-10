@@ -166,7 +166,7 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
             Worker : Digest;
          begin
             MC_Hex.Decode (Ada.Command_Line.Argument (4), Worker, Status); Need ("configured worker digest");
-            Deny_Post := Ada.Command_Line.Argument_Count = 5 and then Ada.Command_Line.Argument (5) = "deny-post";
+            Deny_Post := Ada.Command_Line.Argument_Count >= 5 and then Ada.Command_Line.Argument (5) = "deny-post";
             Stage.Prepare_Root (Root_Path, State_Path, Store_Path, Ada.Command_Line.Argument (3),
                Expected, Worker, Deadline, Status);
             if Deny_Post then Expect (Status = Indeterminate, "post-extraction denial remains uncertain");

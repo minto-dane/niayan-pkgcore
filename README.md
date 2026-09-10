@@ -2,7 +2,7 @@
 
 Catalog and file change planning, bounded package semantics, execution and recovery support for Nia OS. The active product consumes DEB inputs; inherited RPM metadata support does not define the active distribution.
 
-Independent Ada/SPARK repository with a small C codec boundary, MIT licensed. Native compilation, application linking and registered Ada tests now run in Debian 13 amd64. Strict SPARK flow has passed. Full formal proof and production integration remain incomplete; native success does not grant production qualification.
+Independent Ada/SPARK repository with a small C codec boundary, BSD-3-Clause licensed. Native compilation, application linking and registered Ada tests now run in Debian 13 amd64. Strict SPARK flow has passed. Full formal proof and production integration remain incomplete; native success does not grant production qualification.
 
 ```sh
 make compile-all build test
@@ -24,3 +24,5 @@ Missing pins or guards fail closed. The build does not install services, enroll 
 The archive supply SDK verifies a scoped observer signature against independent site policy, checks every referenced CAS object and reobserves the original DEB's control. It supplies a per-original binding, not publication authority. The integration workspace tests real archive authentication through this reader; production key provisioning, whole-plan coverage and generation retention remain required.
 
 The supply map SDK binds a predecessor and candidate catalog to exactly the newly required original DEBs. It independently reobserves both catalogs and all retained inputs, verifies the scoped receipts, and separates fresh verification from historical retention. The v4 publisher binds its retained policy through the authenticated plan, revalidates inputs under the engine reservation, and permits historical receipt checks only after auditing an actual active or accepted transaction. Independent current trust policy remains mandatory during recovery; production providers and full DEB root effects remain incomplete.
+
+The internal `pkg_store_bootstrap` installer executable calls the canonical `MC_Store.Initialize` only for an explicitly requested empty private store. Its `check` operation opens existing structure under the actual reservation; it neither repairs missing state nor verifies object contents. Both operations refuse UID 0. The component artifact installs it only under `/usr/libexec/nia/`; normal startup never calls initialization. Run `make bootstrap-check` to verify refusal and reservation boundaries with temporary state.
