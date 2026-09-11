@@ -7,7 +7,7 @@ with Pkg_Recovery_Audit; with Pkg_Root_State; with Pkg_Supply_Map;
 package body Pkg_Generation_Publisher with SPARK_Mode => Off is
    package GD renames Pkg_Generation_Descriptor;
    package GM renames Pkg_Generation_Manifest;
-   package Staging is new Pkg_Generation_Stage (Authorize_Stage);
+   package Staging is new Pkg_Generation_Stage (Authorize_Stage, Observe_Configuration_Source);
    use type Interfaces.C.unsigned; use type Interfaces.C.int; use type Wide; use type Word;
    use type Pkg_Root_State.State;
    use type Pkg_Supply_Map.Authorities;
@@ -204,8 +204,9 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       Supply_Target : Pkg_Supply_Map.Context;
       Supply_Value : Pkg_Supply_Policy.Snapshot;
       Supply_Until, Last_Supply_Now : Counter := 0;
-      Recorded, Supply_Checked : Boolean := False;
+      Recorded, Supply_Checked, Accepted_Terminal, Source_Checked : Boolean := False;
       P, Old_Plan : Plan_Access := null; Encoded : Buffer_Access := null; Used : Natural;
+      Saved_Hold : Staging.Retained_Generation;
       Hold : Staging.Verified_Generation; Audit : Pkg_Recovery_Audit.Report;
       procedure Time_Left (Result : out Outcome) is
          Now : Counter;
@@ -234,13 +235,19 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
          if not Recorded and then Supply_Until /= 0 and then Current >= Supply_Until then Result := Stale; return; end if;
          Last_Supply_Now := Value.Observed_At; Value.Observed_At := Current; Time_Left (Result);
       end Check_Supply_Policy;
+      function Stage_Held return Boolean is
+        (if M.Format = GM.Configured_V6 and then Accepted_Terminal then
+           Staging.Retained_Held (Saved_Hold) and then Staging.Retained_Manifest (Saved_Hold) = After.Manifest
+         else Staging.Held (Hold) and then Staging.Manifest (Hold) = After.Manifest);
       procedure Guard (Root_ID, Transaction_ID : Identity; Plan, Evidence : Digest;
          Epoch, Fence : Counter; Phase : String; Result : out Outcome) is
          Current_Policy : Pkg_Supply_Policy.Snapshot;
       begin
          Result := Denied;
          if P = null or else Native_Binding = Zero_Digest or else not Supply_Checked
-           or else not Staging.Held (Hold) or else Staging.Manifest (Hold) /= After.Manifest
+           or else not Stage_Held
+           or else (M.Format = GM.Configured_V6 and then
+             (if Accepted_Terminal then Phase /= "finish-terminal" else not Source_Checked))
            or else Root_ID /= P.Root_ID or else Transaction_ID /= P.Transaction_ID or else Plan /= Expected_Plan
            or else Epoch /= P.Epoch or else Fence /= P.Fence
            or else (Evidence /= Zero_Digest and then Evidence /= Health_Receipt)
@@ -255,8 +262,9 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       procedure Validate_Inputs (Locked_Store : in out MC_Store.Store; Result : out Outcome) is
          Latest : Pkg_Root_State.State; Checked_Before, Checked_After : GD.Descriptor;
          Checked_Image : GM.Manifest; Current_Policy : Pkg_Supply_Policy.Snapshot;
+         Source_FD : Integer := -1;
       begin
-         Native_Binding := Zero_Digest; Supply_Checked := False;
+         Native_Binding := Zero_Digest; Supply_Checked := False; Source_Checked := False;
          Read_State (Root, State, P.Root_ID, Latest, Result);
          if Result = OK and then Latest /= RS then Result := Stale; end if;
          if Result = OK then GD.Check (Locked_Store, P.all, Checked_Before, Checked_After, Result); end if;
@@ -276,6 +284,23 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
             -- policy is considered only for the exact actual active/accepted
             -- root state, after checking the complete journal under this lock.
             Pkg_Recovery_Audit.Inspect (State_Path, Store_Path, Expected_Plan, Audit, Result);
+         end if;
+         if Result = OK and then M.Format = GM.Configured_V6 then
+            if Accepted_Terminal then
+               -- Actual accepted state was rechecked above under engine locks;
+               -- the complete exact publication journal must still qualify it.
+               if not Recorded or else Latest.Generation /= P.Target_Generation
+                 or else Latest.Accepted_Plan /= Expected_Plan or else Latest.Package_Set /= After.Catalog
+                 or else Audit.Log_State.Phase not in Pkg_File_Replay.Commit_Pending | Pkg_File_Replay.Forward_Final
+               then Result := Conflict; end if;
+            else
+               Observe_Configuration_Source (After.Manifest, P.Root_ID, M.Transaction_ID, M.Intent,
+                  "publication:configuration", Source_FD, Result);
+               if Result = OK then
+                  Pkg_Generation_Configuration.Check_Current (Locked_Store, M, Source_FD, Deadline, Result);
+               end if;
+               Source_Checked := Result = OK;
+            end if;
          end if;
          if Result = OK then
             Supply_Target := (P.Root_ID, Before, Before_Closure, M.Catalog, M.Catalog_Closure);
@@ -297,7 +322,7 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       procedure Revalidate is new Engine.Check_Inputs (Validate_Inputs);
       procedure Done is
       begin
-         Engine.Close (C); Staging.Close (Hold); MC_Store.Close (Store);
+         Engine.Close (C); Staging.Close (Hold); Staging.Close (Saved_Hold); MC_Store.Close (Store);
          MC_FS.Close (Root_Lock); MC_FS.Close (Lock); MC_FS.Close (Root); MC_FS.Close (State);
          Free (P); Free (Old_Plan); Free (Encoded);
       end Done;
@@ -317,7 +342,7 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
         or else P.Changes (1).After.GID /= Word (MC_Posix.Egid)) then Status := Denied; end if;
       if Status = OK then Read_Manifest (Store, After, M, Status); end if;
       if Status = OK then GM.Check_Retention (Store, M, Deadline, Status); end if;
-      if Status = OK and then M.Format not in GM.Supply_V4 | GM.Root_V5 then Status := Unsupported; end if;
+      if Status = OK and then M.Format not in GM.Supply_V4 | GM.Root_V5 | GM.Configured_V6 then Status := Unsupported; end if;
       if Status = OK and then (M.Effect_Contract /= P.Effect_Contract or else M.Epoch /= P.Epoch or else M.Fence /= P.Fence
         or else M.Transaction_ID = P.Transaction_ID) then Status := Denied; end if;
       if Status = OK then Read_State (Root, State, P.Root_ID, RS, Status); end if;
@@ -347,6 +372,8 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
          if Status = OK then GM.Check_Retention (Store, Baseline, Deadline, Status); end if;
          if Status = OK then Before_Closure := Baseline.Catalog_Closure; end if;
       end if;
+      Accepted_Terminal := RS.Generation = P.Target_Generation and then RS.Accepted_Plan = Expected_Plan
+        and then RS.Package_Set = After.Catalog;
       Recorded := RS.Active_Transaction = P.Transaction_ID or else
         (RS.Generation = P.Target_Generation and then RS.Accepted_Plan = Expected_Plan);
       Encoded := new Bytes (1 .. Pkg_File_Plan.Max_Plan_Bytes);
@@ -354,7 +381,12 @@ package body Pkg_Generation_Publisher with SPARK_Mode => Off is
       MC_Store.Close (Store); MC_FS.Close (Root_Lock);
       if Status /= OK then Done; return; end if;
       declare Path : constant String := GD.Stage_Path (Generation_Bank, After); begin
-         Staging.Verify_And_Hold (Path & "/root", Path & "/state", Store_Path, After.Manifest, Hold, Deadline, Status);
+         if M.Format = GM.Configured_V6 and then Accepted_Terminal then
+            Staging.Verify_Retained_And_Hold (Path & "/root", Path & "/state", Store_Path,
+               After.Manifest, Saved_Hold, Deadline, Status);
+         else
+            Staging.Verify_And_Hold (Path & "/root", Path & "/state", Store_Path, After.Manifest, Hold, Deadline, Status);
+         end if;
       end;
       if Status = OK then Engine.Open (Root_Path, State_Path, Store_Path, P.Root_ID, C, Status); end if;
       if Status = OK and then (Engine.Generation (C) /= RS.Generation or else Engine.Accepted_Plan (C) /= RS.Accepted_Plan

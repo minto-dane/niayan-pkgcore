@@ -29,13 +29,13 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       if Status = OK then Time_Left (Deadline, Status); end if;
    end Gate;
    procedure Check_Content (Store : in out MC_Store.Store; M : GM.Manifest; Expected : Digest;
-      Phase : String; Deadline : Counter; Status : out Outcome) is
+      Phase : String; Deadline : Counter; Status : out Outcome; Current_Source : Boolean := True) is
       Root_ID : Identity; Native_Architecture : MC_Text.Value; Root_FD : Integer := -1;
    begin
       Time_Left (Deadline, Status);
       if Status = OK then GM.Check (Store, M, Status); end if;
       if Status = OK and then M.Format /= GM.Structural_V1 then GM.Check_Retention (Store, M, Deadline, Status); end if;
-      if Status = OK and then M.Format = GM.Configured_V6 then
+      if Status = OK and then Current_Source and then M.Format = GM.Configured_V6 then
          Pkg_Generation_Intent.Read_Target_Scope (Store, M.Intent, M.Catalog, M.Catalog_Closure,
             Deadline, Root_ID, Native_Architecture, Status);
          if Status = OK then
@@ -189,7 +189,7 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
          if Status = OK then Pkg_File_Plan.Encode (P.all, Buffer.all, Used, Status); end if;
          MC_Store.Close (Store);
          if Status = OK then Engine.Open (Root_Path, State_Path, Store_Path, M.Stage_ID, C, Status); end if;
-      if Status = OK and then M.Format = GM.Configured_V6 then Revalidate (C, Status); end if;
+         if Status = OK and then M.Format = GM.Configured_V6 then Revalidate (C, Status); end if;
          if Status = OK and then (Engine.Generation (C) /= Counter (Index - 1) or else Engine.Has_Active_Change (C))
          then Status := Conflict; end if;
          if Status = OK then Engine.Prepare (C, Buffer (1 .. Used), M.Batches (Index).Plan, Status); end if;
@@ -244,9 +244,9 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
    end Close;
    function Held (C : Verified_Generation) return Boolean is (C.Verified);
    function Manifest (C : Verified_Generation) return Digest is (C.Bound_Manifest);
-   procedure Verify_And_Hold
+   procedure Verify_Stage
      (Root_Path, State_Path, Store_Path : String; Expected_Manifest : Digest;
-      C : in out Verified_Generation; Deadline : Counter; Status : out Outcome) is
+      C : in out Verified_Generation; Deadline : Counter; Current_Source : Boolean; Status : out Outcome) is
       M : GM.Manifest; Store : MC_Store.Store;
       Root : MC_FS.Root renames C.Root;
       State : MC_FS.Root renames C.State;
@@ -268,7 +268,7 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       MC_FS.Open_Root (State_Path, State, Status, Private_Only => True);
       if Status = OK then MC_FS.Open_Locked (State, "generation.lock", Lock, Status, Create_If_Missing => False); end if;
       if Status = OK then Read_Binding (State, Expected_Manifest, M, Status); end if;
-      if Status = OK then Gate (M, Expected_Manifest, "inspect", Deadline, Status); end if;
+      if Status = OK then Gate (M, Expected_Manifest, (if Current_Source then "inspect" else "inspect-retained"), Deadline, Status); end if;
       if Status = OK then MC_FS.Open_Locked (State, "root.lock", Root_Lock, Status, Create_If_Missing => False); end if;
       if Status = OK then MC_FS.Open_Root (Root_Path, Root, Status, Private_Only => True); end if;
       if Status = OK then MC_Atomic.Read (Root, ".mission/root.id", Marker, Used, Status); end if;
@@ -282,7 +282,7 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       then Status := Conflict; end if;
       if Status = OK then MC_Store.Open (Store_Path, Store, Status); end if;
       if Status = OK then MC_Store.Check_Pin (Store, M.Transaction_ID, Expected_Manifest, Status); end if;
-      if Status = OK then Check_Content (Store, M, Expected_Manifest, "inspect", Deadline, Status); end if;
+      if Status = OK then Check_Content (Store, M, Expected_Manifest, "inspect", Deadline, Status, Current_Source); end if;
       if Status = OK then MC_FS.List_Names (Root, "", Names, Status); end if;
       if Status = OK and then (Names.Count /= 3 or else MC_Dirents.Image (Names.Names (1)) /= ".mission"
         or else MC_Dirents.Image (Names.Names (2)) /= "catalog" or else MC_Dirents.Image (Names.Names (3)) /= "tree")
@@ -293,7 +293,7 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       if Status /= OK then Done; return; end if;
       Total := 2; P := new Pkg_File_Plan.Plan;
       for I in 1 .. M.Count loop
-         Gate (M, Expected_Manifest, "inspect-batch", Deadline, Status); exit when Status /= OK;
+         Gate (M, Expected_Manifest, (if Current_Source then "inspect-batch" else "inspect-retained-batch"), Deadline, Status); exit when Status /= OK;
          GM.Load_Plan (Store, M, I, P.all, Status); exit when Status /= OK;
          MC_Store.Check_Pin (Store, P.Transaction_ID, M.Batches (I).Plan, Status); exit when Status /= OK;
          MC_Log.Open (State, "tx-" & MC_Hex.Encode (P.Transaction_ID) & ".log", M.Stage_ID,
@@ -322,11 +322,27 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
          exit when Status /= OK;
       end loop;
       if Status = OK and then Total /= M.Entries then Status := Conflict; end if;
-      if Status = OK then Gate (M, Expected_Manifest, "inspected", Deadline, Status); end if;
+      if Status = OK then Gate (M, Expected_Manifest, (if Current_Source then "inspected" else "inspected-retained"), Deadline, Status); end if;
       if Status = OK then C.Verified := True; C.Bound_Manifest := Expected_Manifest; end if;
       Done;
    exception when others => Close (C); Done; Status := Indeterminate;
+   end Verify_Stage;
+   procedure Verify_And_Hold
+     (Root_Path, State_Path, Store_Path : String; Expected_Manifest : Digest;
+      C : in out Verified_Generation; Deadline : Counter; Status : out Outcome) is
+   begin
+      Verify_Stage (Root_Path, State_Path, Store_Path, Expected_Manifest, C, Deadline, True, Status);
    end Verify_And_Hold;
+   procedure Verify_Retained_And_Hold
+     (Root_Path, State_Path, Store_Path : String; Expected_Manifest : Digest;
+      C : in out Retained_Generation; Deadline : Counter; Status : out Outcome) is
+   begin
+      Verify_Stage (Root_Path, State_Path, Store_Path, Expected_Manifest, C.Saved, Deadline, False, Status);
+   end Verify_Retained_And_Hold;
+   function Retained_Held (C : Retained_Generation) return Boolean is (Held (C.Saved));
+   function Retained_Manifest (C : Retained_Generation) return Digest is (Manifest (C.Saved));
+   procedure Close (C : in out Retained_Generation) is
+   begin Close (C.Saved); end Close;
    procedure Prepare_Root
      (Root_Path, State_Path, Store_Path, Socket_Path : String;
       Expected_Manifest, Expected_Worker : Digest; Deadline : Counter; Status : out Outcome) is

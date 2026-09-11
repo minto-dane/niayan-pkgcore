@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 with Pkg_Managed_Engine; with Pkg_Generation_Descriptor;
+with Pkg_Generation_Configuration;
 with Pkg_Selected_Catalog; with Pkg_Payload_Index;
 with Pkg_Deb_Final_Set; with Pkg_Deb_Transition; with Pkg_Supply_Policy;
 generic
@@ -14,6 +15,9 @@ generic
    -- Independent current protected scope/key/floor/age policy and UTC sample;
    -- Value.Map is the exact map bound to the expected authenticated plan. Rows
    -- must be scope-sorted. Never copy keys/time from an untrusted stored policy.
+   with procedure Observe_Configuration_Source (Generation : Digest; Root_ID, Transaction_ID : Identity;
+      Context : Digest; Phase : String; Root_FD : out Integer; Status : out Outcome)
+      is Pkg_Generation_Configuration.Unavailable;
 package Pkg_Generation_Publisher with SPARK_Mode => Off is
    procedure Provision (Root_Path, State_Path : String; Root_ID : Identity;
       Bootstrap_Grant : Digest; Status : out Outcome);
@@ -44,7 +48,7 @@ package Pkg_Generation_Publisher with SPARK_Mode => Off is
    -- This is planning evidence, not supply authentication, a phase schedule or
    -- execution permission. Locks are released on return. Admission must validate
    -- policy, effects and this exact predecessor under its own live reservation.
-   -- Publish requires a v4/v5 manifest carrying native intent and supply policy. The intent
+   -- Publish requires a v4/v5/v6 manifest carrying native intent and supply policy. The intent
    -- is bound through manifest/descriptor to the physical plan checked by the
    -- existing managed authority. Native dependencies, protection and the exact
    -- predecessor are revalidated from originals before any publication effect.
@@ -54,7 +58,18 @@ package Pkg_Generation_Publisher with SPARK_Mode => Off is
    -- current UTC time. Recorded recovery first audits the exact active/accepted
    -- root.state and journal; only then may receipt time be rechecked historically.
    -- Independent current keys/floors/ages and all managed guards still apply.
-   -- Native reads accept retained v2/v3/v4/v5; v1 remains metadata-only. Publish rejects
+   -- v6 new/in-flight publication requires the independently reserved source
+   -- through Observe_Configuration_Source (default DENIED). Current verification
+   -- runs during stage inspection and again on the actual publication engine's
+   -- CAS reservation. The provider retains source quiescence through all managed
+   -- guards and effects. Active admission alone cannot waive this observation.
+   -- Only an exact already-accepted root.state and complete matching journal
+   -- permit terminal reconciliation from Retained_Generation evidence, without
+   -- re-observing the old source. The engine rechecks its exact after-image and
+   -- immutable receipt; only finish-terminal is authorized in this v6 path.
+   -- No new descriptor/content/decision is applied by terminal reconciliation.
+   -- This selects a retained archive, not a physically activated/booted root.
+   -- Native reads accept retained v2/v3/v4/v5/v6; v1 remains metadata-only. Publish rejects
    -- v1/v2/v3 plans, including their replay: legacy recovery needs its retained
    -- implementation before migration. There is no policy-free fallback path.
    -- Publish requires a finite deadline and checks it in the composed guard.

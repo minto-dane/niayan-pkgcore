@@ -10,6 +10,21 @@ generic
       is Pkg_Generation_Configuration.Unavailable;
 package Pkg_Generation_Stage with SPARK_Mode => Off is
    type Verified_Generation is limited private;
+   type Retained_Generation is limited private;
+   procedure Verify_Retained_And_Hold
+     (Root_Path, State_Path, Store_Path : String; Expected_Manifest : Digest;
+      C : in out Retained_Generation; Deadline : Counter; Status : out Outcome);
+   function Retained_Held (C : Retained_Generation) return Boolean;
+   function Retained_Manifest (C : Retained_Generation) return Digest;
+   procedure Close (C : in out Retained_Generation);
+   -- Read-only physical stage, journals, pins and saved native retention. This
+   -- DISTINCT type does not establish current configuration and cannot be used
+   -- as a Verified_Generation. The inspect-retained/inspect-retained-batch/
+   -- inspected-retained authorizations remain mandatory. No source observation
+   -- is revived. A caller must prove its exact already-accepted publication
+   -- state and journal before using this evidence for terminal reconciliation;
+   -- it is never sufficient for new/in-flight publication, extraction or boot.
+
    procedure Verify_And_Hold
      (Root_Path, State_Path, Store_Path : String; Expected_Manifest : Digest;
       C : in out Verified_Generation; Deadline : Counter; Status : out Outcome);
@@ -36,7 +51,7 @@ package Pkg_Generation_Stage with SPARK_Mode => Off is
      (Root_Path, State_Path, Store_Path : String; Expected_Manifest : Digest; Deadline : Counter;
       Status : out Outcome);
    -- v6 requires an independently authenticated, borrowed configuration source
-   -- root via Observe_Configuration; its default refuses all v6 operations.
+   -- root via Observe_Configuration; its default refuses live v6 operations.
    -- The provider retains source exclusion through each whole operation. Saved
    -- choices are freshly verified after every CAS reacquisition, including the
    -- inner batch engine's Check_Inputs before prepare/resume. Physical request
@@ -66,5 +81,8 @@ private
       Lock, Root_Lock : MC_FS.File;
       Verified : Boolean := False;
       Bound_Manifest : Digest := Zero_Digest;
+   end record;
+   type Retained_Generation is limited record
+      Saved : Verified_Generation;
    end record;
 end Pkg_Generation_Stage;

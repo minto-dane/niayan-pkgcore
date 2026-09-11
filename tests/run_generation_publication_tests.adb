@@ -15,6 +15,7 @@ with Pkg_Payload_Index; with Pkg_Selected_Catalog;
 with Pkg_Deb_Final_Set; with Pkg_Deb_Transition;
 with Pkg_Root_Archive; with Pkg_Archive_Supply; with Pkg_Supply_Map; with Pkg_Supply_Policy;
 with Pkg_Site_Supply;
+with Pkg_Configured_Root; with Pkg_Conffile_Choice; with Pkg_Conffile_Transition; with Pkg_Root_Configuration;
 with Pkg_File_Plan; with Pkg_Generation_Descriptor; with Pkg_Generation_Manifest; with Pkg_Generation_Intent;
 with Pkg_Generation_Publisher; with Pkg_Generation_Stage; with Pkg_Managed_Engine; with Pkg_Root_State;
 with Resolver_Model; with Resolver_Admission; with Resolver_Wire;
@@ -51,7 +52,13 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       else Ada.Directories.Current_Directory & "/tests/fixtures/selected-catalog");
    Laboratory : constant Boolean := Ada.Command_Line.Argument_Count >= 6;
    Root_Laboratory : constant Boolean := Ada.Command_Line.Argument_Count = 6
-      and then Ada.Command_Line.Argument (6) = "root-archive";
+      and then Ada.Command_Line.Argument (6) in "root-archive" | "configured-root" | "configured-stale" | "configured-active-stale";
+   Configured_Laboratory : constant Boolean := Ada.Command_Line.Argument_Count = 6
+      and then Ada.Command_Line.Argument (6) in "configured-root" | "configured-stale" | "configured-active-stale";
+   Mutate_Source_At_Handoff : Boolean := False;
+   Source_FD : MC_Posix.FD := -1;
+   Deny_Source : Boolean := False;
+   Source_Calls, Publication_Source_Calls : Natural := 0;
    Site_Laboratory : constant Boolean := Ada.Command_Line.Argument_Count = 8
       and then Ada.Command_Line.Argument (6) in "site-supply" | "site-refusal";
    Site_Context : Pkg_Site_Supply.Session;
@@ -221,11 +228,20 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
         or else Epoch /= 1 or else Fence /= 2 then return; end if;
       if Plan = Zero_Digest and then Transaction_ID = M.Transaction_ID and then Evidence = Zero_Digest
         and then Phase in "stage:provision" | "stage:provision-root" | "stage:advance"
-          | "stage:inspect" | "stage:inspect-batch" | "stage:inspected" then Status := OK;
+          | "stage:inspect" | "stage:inspect-batch" | "stage:inspected"
+          | "stage:inspect-retained" | "stage:inspect-retained-batch" | "stage:inspected-retained" then Status := OK;
       elsif Plan = M.Batches (1).Plan and then Transaction_ID = GM.Transaction (M, 1)
         and then (Evidence = Zero_Digest or else Evidence = Receipt)
         and then Phase in "stage:prepare" | "stage:capture" | "stage:apply" | "stage:commit"
           | "stage:file-effect" | "stage:publish-file" | "stage:finish-terminal" then Status := OK;
+      end if;
+      if Status = OK and then Mutate_Source_At_Handoff and then Phase = "stage:inspected" then
+         declare Source_Root : MC_FS.Root; begin
+            MC_FS.Open_Root (Ada.Directories.Containing_Directory (Root_Path) & "/source", Source_Root, Status,
+               Private_Only => True);
+            if Status = OK then MC_Atomic.Write (Source_Root, "etc/fixture.conf", Bytes'(110, 101, 119), False, Status); end if;
+            MC_FS.Close (Source_Root); Mutate_Source_At_Handoff := False;
+         end;
       end if;
       if Status = OK and then Expire_Stage and then Phase = "stage:inspect" then Await_Deadline; end if;
       if Status = OK and then Phase = "stage:inspected" and then Hide_After_Stage /= Zero_Digest
@@ -239,7 +255,23 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
    end Authorize_Stage;
    procedure Bootstrap (R : Identity; G : Digest; Status : out Outcome) is
    begin Status := (if Inject /= Bootstrap_Denied and then R = Root_ID and then G = Grant then OK else Denied); end Bootstrap;
-   package Stage is new Pkg_Generation_Stage (Authorize_Stage);
+   procedure Observe_Source (Generation : Digest; R, T : Identity; Context : Digest;
+      Phase : String; Root_FD : out Integer; Status : out Outcome) is
+   begin
+      Source_Calls := Source_Calls + 1; Root_FD := -1; Status := Denied;
+      if Phase = "publication:configuration" then
+         Publication_Source_Calls := Publication_Source_Calls + 1;
+         if Deny_Source then return; end if;
+      end if;
+      -- Disposable source is held by this process; no other writer is started.
+      -- This fixture does not provide production source authorization/quiescence.
+      if Source_FD < 0 or else Generation /= Manifest_Hash or else R /= Root_ID
+        or else T /= M.Transaction_ID or else Context /= M.Intent
+        or else Phase not in "stage:provision" | "stage:advance" | "stage:advance-inputs"
+          | "stage:inspect" | "publication:configuration" then return; end if;
+      Root_FD := Integer (Source_FD); Status := OK;
+   end Observe_Source;
+   package Stage is new Pkg_Generation_Stage (Authorize_Stage, Observe_Source);
    procedure Observe_Supply (R, T : Identity; Plan, Policy : Digest;
       Value : out Pkg_Supply_Policy.Snapshot; Status : out Outcome) is
    begin
@@ -255,7 +287,8 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       if Inject = Supply_Floor_Changed then Value.Trusted (1).Minimum_Epoch := 8; end if;
       Status := OK;
    end Observe_Supply;
-   package Publisher is new Pkg_Generation_Publisher (Managed, Authorize_Stage, Bootstrap, Observe_Supply);
+   package Publisher is new Pkg_Generation_Publisher (Managed, Authorize_Stage, Bootstrap, Observe_Supply, Observe_Source);
+   package Unavailable_Publisher is new Pkg_Generation_Publisher (Managed, Authorize_Stage, Bootstrap, Observe_Supply);
    procedure Probe_Reservations is
       Local : Outcome; D : GD.Descriptor; Count : Natural;
       Stage_State : MC_FS.Root; Lock : MC_FS.File;
@@ -554,7 +587,7 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
       type Metadata_Access is access Pkg_Deb_Metadata.Observation;
       Metadata : Metadata_Access := new Pkg_Deb_Metadata.Observation;
       procedure Free is new Ada.Unchecked_Deallocation (Pkg_Deb_Metadata.Observation, Metadata_Access);
-      Name : constant String := (if File_Name /= "" then File_Name elsif Root_Laboratory then "base.deb" elsif N = 1 then "empty.deb" else "consumer-upgrade.deb");
+      Name : constant String := (if File_Name /= "" then File_Name elsif Configured_Laboratory then "layout.deb" elsif Root_Laboratory then "base.deb" elsif N = 1 then "empty.deb" else "consumer-upgrade.deb");
    begin
       MC_FS.Open_Root (Ada.Directories.Full_Name (Fixture_Path), Media, S); Need ("native fixture media");
       MC_FS.Open_Read (Media, Name, File, S); Need ("native fixture original");
@@ -721,6 +754,27 @@ procedure Run_Generation_Publication_Tests with SPARK_Mode => Off is
                   Pkg_Root_Archive.Build (Store, Catalog, M.Catalog_Closure, Chosen, MC_Store.Max_Object_Size,
                      Observation_Deadline, M.Root_Archive, Root_Tar, S); Need ("root candidate archive");
                end;
+               if Configured_Laboratory then
+                  declare Proposal : aliased Pkg_Conffile_Choice.Proposal; Prior, Decision, Kept : Digest;
+                     Choices : Pkg_Root_Configuration.Choices (1 .. 1); Media : MC_FS.Root;
+                  begin
+                     MC_FS.Open_Root (Fixture_Path, Media, S); Need ("configuration vendor media");
+                     MC_FS.Open_Read (Media, "normal.deb", File, S); Need ("prior vendor original");
+                     MC_Store.Import_File (Store, File, MC_Store.Max_Object_Size, Prior, S); Need ("prior vendor retained");
+                     MC_FS.Close (File); MC_FS.Close (Media);
+                     M.Format := GM.Configured_V6;
+                     Pkg_Conffile_Choice.Prepare (Store, Integer (Source_FD), Root_ID, M.Transaction_ID, M.Intent,
+                        Pkg_Conffile_Choice.Update, "/etc/fixture.conf", Prior, Catalog_Original,
+                        MC_Store.Max_Object_Size, Observation_Deadline, Proposal, S); Need ("publication source proposal");
+                     Pkg_Conffile_Choice.Resolve (Store, Proposal, Pkg_Conffile_Choice.Address (Proposal),
+                        Pkg_Conffile_Transition.Keep_Local, "/etc/fixture.conf.save", Observation_Deadline,
+                        Decision, Kept, S); Need ("publication retained local choice");
+                     Choices (1) := (Proposal'Unchecked_Access, Decision, Kept);
+                     Pkg_Configured_Root.Build (Store, M.Root_Archive, Catalog, M.Catalog_Closure, Root_ID,
+                        M.Transaction_ID, M.Intent, "amd64", Choices, MC_Store.Max_Object_Size, Observation_Deadline,
+                        M.Configured_Root, Root_Tar, M.Configuration_Closure, S); Need ("configured publication archive");
+                  end;
+               end if;
                MC_Store.Open_Object (Store, Root_Tar, File, S); Need ("root archive observation");
                MC_FS.Info (File, Info, S); MC_FS.Close (File); Need ("root archive length"); Root_Tar_Size := Info.Size;
             end;
@@ -950,13 +1004,20 @@ begin
    if Laboratory and then Ada.Command_Line.Argument (6) = "recover" then Recover_Laboratory; return; end if;
    if Laboratory then
       Expect (Site_Laboratory or else (Ada.Command_Line.Argument_Count = 6
-         and then Ada.Command_Line.Argument (6) in "checkpoint" | "root-archive"),
+         and then Ada.Command_Line.Argument (6) in "checkpoint" | "root-archive" | "configured-root" | "configured-stale" | "configured-active-stale"),
          "explicit disposable lab checkpoint mode");
    end if;
    if Site_Laboratory then MC_Clock.Realtime_Seconds (Supply_Now, S); Need ("independent actual receipt time"); end if;
    MC_Store.Initialize (Store_Path, Store, S); Need ("initialize fixture CAS");
    MC_Store.Put (Store, Bytes'(0, 0), Attrs, S); Need ("empty attributes");
    MC_Store.Put (Store, Bytes'(7, 8, 9), Receipt, S); Need ("synthetic health receipt"); MC_Store.Close (Store);
+   if Configured_Laboratory then
+      declare Name : constant String := Ada.Directories.Containing_Directory (Root_Path) & "/source" & ASCII.NUL; begin
+         Source_FD := MC_Posix.Open (Name'Address,
+            MC_Posix.O_PATH + MC_Posix.O_DIRECTORY + MC_Posix.O_NOFOLLOW + MC_Posix.O_CLOEXEC, 0);
+         Expect (Source_FD >= 0, "open isolated configuration source");
+      end;
+   end if;
    Build (1);
    declare Wire : GD.Frame := GD.Encode (After); begin
       GD.Decode (Wire, Decoded, S); Need ("decode descriptor"); Expect (Decoded = After, "canonical descriptor round trip");
@@ -1019,6 +1080,31 @@ begin
    end if;
    if Root_Laboratory then
       Complete_Stage (False);
+      if Configured_Laboratory and then Ada.Command_Line.Argument (6) /= "configured-root" then
+         declare Snapshot, Latest : Pkg_Root_State.Frame; N, Calls : Natural; Closed : Interfaces.C.int; begin
+            if Ada.Command_Line.Argument (6) = "configured-active-stale" then
+               Inject := Commit_Denied; Publish; Expect (S = Denied, "admitted configured checkpoint"); Inject := None;
+            end if;
+            MC_FS.Open_Root (State_Path, State, S, Private_Only => True); Need ("handoff state fixture");
+            MC_Atomic.Read (State, "root.state", Snapshot, N, S); Need ("handoff before state");
+            Calls := Publication_Source_Calls; Mutate_Source_At_Handoff := True; Publish;
+            Expect (S /= OK and then not Mutate_Source_At_Handoff and then Publication_Source_Calls = Calls + 1,
+               "actual engine reservation rejects source changed after stage inspection");
+            MC_Atomic.Read (State, "root.state", Latest, N, S); Need ("handoff after state");
+            Expect (Latest = Snapshot, "source disagreement preserves exact publication state");
+            Read_Current; Expect (S /= OK and then Current = GD.Empty, "changed source cannot become accepted");
+            MC_FS.Close (State); Closed := MC_Posix.Close (Source_FD); Source_FD := -1;
+            Expect (Closed = 0, "close rejected source fixture");
+            Ada.Text_IO.Put_Line ("CONFIGURED_HANDOFF " & Ada.Command_Line.Argument (6)); Report; return;
+         end;
+      end if;
+      if Configured_Laboratory then
+         Unavailable_Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, Plan_Hash, Receipt, Observation_Deadline, S);
+         Expect (S = Denied, "default configuration provider cannot admit configured generation");
+         Deny_Source := True; Publish; Expect (S = Denied, "actual engine reservation requires current source");
+         Expect (Publication_Source_Calls = 1, "source denial occurs after verified stage handoff");
+         Read_Current; Expect (S = Stale, "source denial leaves no admitted generation"); Deny_Source := False;
+      end if;
       declare CAS : MC_FS.Root; Info : MC_FS.Entry_Info;
          type Hashes is array (Positive range <>) of Digest;
          function Object_Path (Hash : Digest) return String is
@@ -1038,6 +1124,10 @@ begin
          MC_FS.Rename (CAS, Object_Path (M.Root_Archive), "held-published-root", True, S); Need ("hold root recovery input");
          Inject := None; Publish; Expect (S /= OK, "recovery cannot bypass missing root manifest");
          MC_FS.Rename (CAS, "held-published-root", Object_Path (M.Root_Archive), True, S); Need ("restore root recovery input");
+         if Configured_Laboratory then
+            Deny_Source := True; Publish; Expect (S = Denied, "active admission cannot waive current source");
+            Read_Current; Expect (S = Indeterminate, "refused recovery stays unaccepted"); Deny_Source := False;
+         end if;
          Supply_Now := 2_000; Publish; Need ("recorded root recovery after supply expiry");
          Read_Native (Observation_Deadline); Need ("accepted native root generation"); Expect (Current = After, "root generation descriptor exact");
          MC_FS.Rename (CAS, Object_Path (M.Root_Archive), "held-published-root", True, S); Need ("hold accepted root retention");
@@ -1046,6 +1136,36 @@ begin
          MC_FS.Close (CAS);
       end;
       Read_Native (Observation_Deadline); Need ("restored accepted root generation");
+      if Configured_Laboratory then
+         declare Source_Root : MC_FS.Root; Held : Stage.Verified_Generation;
+            Calls : constant Natural := Source_Calls; Closed : Interfaces.C.int;
+            Path : constant String := GD.Stage_Path (Bank, After);
+            Snapshot, Latest : Pkg_Root_State.Frame; N : Natural;
+         begin
+            MC_FS.Open_Root (Ada.Directories.Containing_Directory (Root_Path) & "/source", Source_Root, S,
+               Private_Only => True); Need ("accepted source fixture");
+            MC_Atomic.Write (Source_Root, "etc/fixture.conf", Bytes'(110, 101, 119), False, S);
+            Need ("change source after acceptance"); MC_FS.Close (Source_Root);
+            Stage.Verify_And_Hold (Path & "/root", Path & "/state", Store_Path, Manifest_Hash,
+               Held, Observation_Deadline, S);
+            Expect (S /= OK and then not Stage.Held (Held), "changed source is not current stage evidence"); Stage.Close (Held);
+            Expect (Source_Calls = Calls + 1, "current inspection reobserved changed source");
+            Closed := MC_Posix.Close (Source_FD); Source_FD := -1; Expect (Closed = 0, "release obsolete source descriptor");
+            MC_FS.Open_Root (State_Path, State, S, Private_Only => True); Need ("accepted state fixture");
+            MC_Atomic.Read (State, "root.state", Snapshot, N, S); Need ("exact accepted state before retry");
+            Publish; Need ("accepted retry uses retained evidence without source");
+            Unavailable_Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, Plan_Hash, Receipt, Observation_Deadline, S);
+            Need ("terminal-only recovery works with unavailable source provider");
+            MC_Atomic.Read (State, "root.state", Latest, N, S); Need ("accepted state after retry");
+            Expect (Latest = Snapshot and then Source_Calls = Calls + 1, "terminal retry preserves decision and never reobserves source");
+            Publisher.Publish (Root_Path, State_Path, Store_Path, Bank, Plan_Hash, Mark, Observation_Deadline, S);
+            Expect (S = Denied, "accepted configuration still requires original health receipt");
+            Commit_Window (True, False); Commit_Window (True, True);
+            Expect (Source_Calls = Calls + 1, "both accepted journal windows are source-independent");
+            MC_FS.Close (State);
+         end;
+         Ada.Text_IO.Put_Line ("CONFIGURED_TERMINAL source_changed unavailable_provider commit_pending forward_final");
+      end if;
       Ada.Text_IO.Put_Line ("ROOT_GENERATION " & MC_Hex.Encode (Manifest_Hash));
       Ada.Text_IO.Put_Line ("ROOT_PLAN " & MC_Hex.Encode (Plan_Hash));
       Ada.Text_IO.Put_Line ("ROOT_ARCHIVE " & MC_Hex.Encode (Root_Tar));
