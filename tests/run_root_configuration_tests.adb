@@ -83,6 +83,9 @@ procedure Run_Root_Configuration_Tests with SPARK_Mode => Off is
       Ada.Text_IO.Put_Line ("CONFIGURED " & Label_Text & " " & MC_Hex.Encode (Record_ID) & " " & MC_Hex.Encode (Root_ID)
          & " " & MC_Hex.Encode (Retained_ID));
       if Verify_Again then
+         Pkg_Configured_Root.Verify_Current (Store, Integer (Root), Record_ID, Retained_ID, Manifest, Catalog, Closure,
+            (others => 1), (others => 2), (others => 9), "amd64", Limit, Deadline, Again, Status);
+         Expect (Status = Conflict and then Again = Zero_Digest, "fresh root check binds independently expected context");
          Pkg_Configured_Root.Verify (Store, Record_ID, Retained_ID, Manifest, Catalog, Closure, (others => 1), (others => 2),
             Context, "amd64", Selected, Limit, Deadline, Again, Status); Need ("exact configured verification");
          Expect (Again = Root_ID, "deterministic configured root identity");
@@ -97,6 +100,9 @@ procedure Run_Root_Configuration_Tests with SPARK_Mode => Off is
             MC_FS.Open_Root (Ada.Command_Line.Argument (1), Private_CAS, Status); Need ("private configured output fault");
             MC_FS.Remove (Private_CAS, "objects/" & H (1 .. 2) & "/" & H (3 .. 64), False, Status);
             MC_FS.Close (Private_CAS); Need ("remove only generated root");
+            Pkg_Configured_Root.Verify_Current (Store, Integer (Root), Record_ID, Retained_ID, Manifest, Catalog, Closure,
+               (others => 1), (others => 2), Context, "amd64", Limit, Deadline, Again, Status);
+            Expect (Status /= OK and then Again = Zero_Digest, "fresh root check refuses missing saved output before rebuild");
             Pkg_Configured_Root.Verify (Store, Record_ID, Retained_ID, Manifest, Catalog, Closure, (others => 1), (others => 2),
                Context, "amd64", Selected, Limit, Deadline, Again, Status);
             Expect (Status /= OK and then Again = Zero_Digest, "lost configured output not silently repaired");
@@ -118,7 +124,8 @@ procedure Run_Root_Configuration_Tests with SPARK_Mode => Off is
       end if;
    end Serialize;
 begin
-   if Ada.Command_Line.Argument_Count = 5 and then Ada.Command_Line.Argument (2) = "--retained" then
+   if (Ada.Command_Line.Argument_Count = 5 and then Ada.Command_Line.Argument (2) = "--retained")
+      or else (Ada.Command_Line.Argument_Count = 6 and then Ada.Command_Line.Argument (2) = "--current") then
       Configured_Root_Record_Test.Run; return;
    end if;
    Expect (Ada.Command_Line.Argument_Count = 3, "store root and media");

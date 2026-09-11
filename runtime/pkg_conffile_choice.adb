@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Containers.Ordered_Sets; with Ada.Unchecked_Deallocation; with Interfaces.C;
-with MC_Clock; with MC_Codec; with MC_FS; with MC_Posix;
+with MC_Clock; with MC_Codec; with MC_FS; with MC_Posix; with MC_SHA256;
 with Pkg_Conffile_Snapshot; with Pkg_Deb_Conffiles; with Pkg_Deb_Payload;
 with Pkg_Conffile_Observation;
 package body Pkg_Conffile_Choice with SPARK_Mode => Off is
@@ -9,7 +9,7 @@ package body Pkg_Conffile_Choice with SPARK_Mode => Off is
    package Objects is new Ada.Containers.Ordered_Sets (Digest);
    use type Interfaces.C.int; use type Interfaces.C.unsigned;
    use type T.File_Kind; use type T.Action; use type T.Backup_Kind; use type T.Choice; use type P.Entry_Kind;
-   use type Word;
+   use type Word; use type Wide; use type Byte;
    type Data is record
       Root : MC_Posix.FD := -1;
       Reservation : Integer := -1;
@@ -25,7 +25,7 @@ package body Pkg_Conffile_Choice with SPARK_Mode => Off is
       Local, Backup : S.Snapshot;
       Proposal_Hash, Decision_Hash, Closure_Hash : Digest := Zero_Digest;
       Pending_Decision : T.Decision;
-      Members : Objects.Set;
+      Members, Sources : Objects.Set;
       Selected : Boolean := False;
    end record;
    procedure Free is new Ada.Unchecked_Deallocation (Data, Data_Access);
@@ -51,7 +51,9 @@ package body Pkg_Conffile_Choice with SPARK_Mode => Off is
       if Status = OK and then (Now >= Deadline or else Deadline = Counter'Last) then Status := Stale; end if;
    end Tick;
    procedure Include (Value : in out Data; Hash : Digest) is
-   begin if Hash /= Zero_Digest then Value.Members.Include (Hash); end if; end Include;
+   begin
+      if Hash /= Zero_Digest then Value.Members.Include (Hash); Value.Sources.Include (Hash); end if;
+   end Include;
    procedure Verify_Members (Store : MC_Store.Store; Value : Data; Deadline : Counter; Status : out Outcome) is
       File : MC_FS.File;
    begin
@@ -146,7 +148,7 @@ package body Pkg_Conffile_Choice with SPARK_Mode => Off is
          for I in 1 .. Path'Length loop Wire (344 + I) := Character'Pos (Path (Path'First + I - 1)); end loop;
          MC_Store.Put (Store, Wire, Value.State.Proposal_Hash, Status); Need;
       end;
-      Include (Value.State.all, Value.State.Proposal_Hash);
+      Value.State.Members.Include (Value.State.Proposal_Hash);
       Verify_Members (Store, Value.State.all, Deadline, Status); Need;
       S.Recheck (Store, Value.State.Local, Deadline, Status); Need;
    exception
@@ -284,7 +286,7 @@ package body Pkg_Conffile_Choice with SPARK_Mode => Off is
          for I in 1 .. Backup_Path'Length loop Wire (368 + I) := Character'Pos (Backup_Path (Backup_Path'First + I - 1)); end loop;
          MC_Store.Put (Store, Wire, Value.State.Decision_Hash, Status); Need;
       end;
-      Include (Value.State.all, Value.State.Decision_Hash);
+      Value.State.Members.Include (Value.State.Decision_Hash);
       if Natural (Value.State.Members.Length) > 32 then Status := Exhausted; raise Interrupted; end if;
       Verify_Members (Store, Value.State.all, Bound, Status); Need;
       declare Wire : Bytes (1 .. 76 + 32 * Natural (Value.State.Members.Length)) := (others => 0); Pos : Natural := 76; begin
@@ -301,4 +303,97 @@ package body Pkg_Conffile_Choice with SPARK_Mode => Off is
       when Storage_Error => Clear (Value); Decision := Zero_Digest; Closure := Zero_Digest; Status := Exhausted;
       when others => Clear (Value); Decision := Zero_Digest; Closure := Zero_Digest; Status := Indeterminate;
    end Resolve;
+   procedure Reobserve (Store : in out MC_Store.Store; Root_FD : Integer;
+      Root_ID, Transaction : Identity; Context : Digest;
+      Saved_Proposal, Saved_Decision, Saved_Closure : Digest; Limit, Deadline : Counter;
+      Value : in out Proposal; Decision, Closure : out Digest; Status : out Outcome) is
+      Old_Proposal, New_Proposal : Bytes (1 .. 344 + P.Max_Name);
+      Old_Decision, New_Decision : Bytes (1 .. 368 + P.Max_Name);
+      Retention : Bytes (1 .. 76 + 32 * 32);
+      Proposal_Size, Decision_Size, Used, Count, Path_Length, Backup_Length : Natural;
+      Members, Expected_Members : Objects.Set; Previous, Member : Digest := Zero_Digest;
+      File : MC_FS.File; Current_Decision, Current_Closure : Digest;
+      Mode : Operation;
+      Interrupted : exception;
+      procedure Need is begin if Status /= OK then raise Interrupted; end if; end Need;
+      procedure Refuse (Reason : Outcome := Corrupt) is begin Status := Reason; raise Interrupted; end Refuse;
+      procedure Read (Address : Digest; Wire : out Bytes; Length : out Natural) is
+      begin
+         Tick (Deadline, Status); Need;
+         MC_Store.Read_Object (Store, Address, Wire, Length, Status); Need;
+         if MC_SHA256.Hash (Wire (1 .. Length)) /= Address then Refuse; end if;
+         Tick (Deadline, Status); Need;
+      end Read;
+      procedure Required (Address : Digest) is
+      begin if Address /= Zero_Digest and then not Members.Contains (Address) then Refuse; end if; end Required;
+      function Text (Wire : Bytes) return String is
+         Result : String (1 .. Wire'Length);
+      begin
+         for I in Result'Range loop Result (I) := Character'Val (Wire (Wire'First + I - 1)); end loop;
+         return Result;
+      end Text;
+   begin
+      Clear (Value); Decision := Zero_Digest; Closure := Zero_Digest; Status := Denied;
+      if MC_Posix.Euid = 0 then return; end if;
+      Status := Invalid_Input;
+      if Root_FD < 0 or else Root_ID = Zero_Identity or else Transaction = Zero_Identity or else Context = Zero_Digest
+         or else Saved_Proposal = Zero_Digest or else Saved_Decision = Zero_Digest or else Saved_Closure = Zero_Digest
+         or else MC_Store.Native_Reservation (Store) < 0 or else Limit > MC_Store.Max_Object_Size then return; end if;
+      Read (Saved_Closure, Retention, Used);
+      if Used < 76 or else Retention (1 .. 8) /= Bytes'(78, 73, 65, 67, 67, 70, 48, 49)
+         or else Retention (9 .. 40) /= Saved_Proposal or else Retention (41 .. 72) /= Saved_Decision
+         or else MC_Codec.U32 (Retention, 73) not in 1 .. 32 then Refuse; end if;
+      Count := Natural (MC_Codec.U32 (Retention, 73)); if Used /= 76 + 32 * Count then Refuse; end if;
+      for I in 0 .. Count - 1 loop
+         Member := Retention (77 + 32 * I .. 108 + 32 * I);
+         if Member <= Previous then Refuse; end if; Previous := Member; Members.Insert (Member);
+         Tick (Deadline, Status); Need; MC_Store.Open_Object (Store, Member, File, Status); Need; MC_FS.Close (File);
+      end loop;
+      Required (Saved_Proposal); Required (Saved_Decision);
+      Read (Saved_Proposal, Old_Proposal, Proposal_Size); Read (Saved_Decision, Old_Decision, Decision_Size);
+      if Proposal_Size < 344 or else Old_Proposal (1 .. 8) /= Bytes'(78, 73, 65, 67, 80, 82, 48, 49)
+         or else Old_Proposal (9 .. 24) /= Root_ID or else Old_Proposal (25 .. 40) /= Transaction
+         or else Old_Proposal (41 .. 72) /= Context or else Old_Proposal (329) > 3
+         or else MC_Codec.U64 (Old_Proposal, 333) not in 1 .. Wide (Counter'Last - 1)
+         or else MC_Codec.U32 (Old_Proposal, 341) not in 2 .. Word (P.Max_Name) then Refuse; end if;
+      Path_Length := Natural (MC_Codec.U32 (Old_Proposal, 341));
+      if Proposal_Size /= 344 + Path_Length then Refuse; end if;
+      if Decision_Size < 368 or else Old_Decision (1 .. 8) /= Bytes'(78, 73, 65, 67, 67, 72, 48, 50)
+         or else Old_Decision (9 .. 40) /= Saved_Proposal or else Old_Decision (41) > 2
+         or else MC_Codec.U32 (Old_Decision, 205) > Word (P.Max_Name) then Refuse; end if;
+      Backup_Length := Natural (MC_Codec.U32 (Old_Decision, 205));
+      if Decision_Size /= 368 + Backup_Length then Refuse; end if;
+      for I in 0 .. 7 loop Required (Old_Proposal (73 + 32 * I .. 104 + 32 * I)); end loop;
+      for I in 0 .. 4 loop Required (Old_Decision (45 + 32 * I .. 76 + 32 * I)); end loop;
+      for I in 0 .. 1 loop
+         Required (Old_Decision (225 + 80 * I .. 256 + 80 * I));
+         Required (Old_Decision (257 + 80 * I .. 288 + 80 * I));
+      end loop;
+      Mode := (case Old_Proposal (329) is when 0 | 3 => Update, when 1 => Remove, when others => Purge);
+      Prepare (Store, Root_FD, Root_ID, Transaction, Context, Mode, Text (Old_Proposal (345 .. Proposal_Size)),
+         Old_Proposal (73 .. 104), Old_Proposal (105 .. 136), Limit, Deadline, Value, Status); Need;
+      Read (Address (Value), New_Proposal, Used);
+      if Used /= Proposal_Size then Refuse (Stale); end if;
+      -- Compare every recorded observation and original-derived field. Only the
+      -- new observation lifetime differs; never rewrite the historical object.
+      New_Proposal (333 .. 340) := Old_Proposal (333 .. 340);
+      if New_Proposal (1 .. Used) /= Old_Proposal (1 .. Proposal_Size) then Refuse (Stale); end if;
+      Resolve (Store, Value, Address (Value), T.Choice'Val (Old_Decision (41)),
+         Text (Old_Decision (369 .. Decision_Size)), Deadline, Current_Decision, Current_Closure, Status); Need;
+      Read (Current_Decision, New_Decision, Used);
+      if Used /= Decision_Size then Refuse (Stale); end if;
+      New_Decision (9 .. 40) := Saved_Proposal;
+      if New_Decision (1 .. Used) /= Old_Decision (1 .. Decision_Size) then Refuse (Stale); end if;
+      -- Keep sources separately: a content digest may legitimately also be a
+      -- record digest. Removing session IDs from a flat set would lose that role.
+      Expected_Members := Value.State.Sources;
+      Expected_Members.Include (Saved_Proposal); Expected_Members.Include (Saved_Decision);
+      if not Objects."=" (Members, Expected_Members) then Refuse; end if;
+      Recheck (Store, Value, Current_Decision, Current_Closure, Deadline, Status); Need;
+      Decision := Current_Decision; Closure := Current_Closure;
+   exception
+      when Interrupted => MC_FS.Close (File); Clear (Value); Decision := Zero_Digest; Closure := Zero_Digest;
+      when Storage_Error => MC_FS.Close (File); Clear (Value); Decision := Zero_Digest; Closure := Zero_Digest; Status := Exhausted;
+      when others => MC_FS.Close (File); Clear (Value); Decision := Zero_Digest; Closure := Zero_Digest; Status := Indeterminate;
+   end Reobserve;
 end Pkg_Conffile_Choice;

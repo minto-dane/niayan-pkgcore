@@ -48,9 +48,17 @@ procedure Run_Conffile_Choice_Tests with SPARK_Mode => Off is
    procedure Cleared is
    begin Expect (Decision = Zero_Digest and then Closure = Zero_Digest and then C.Address (Value) = Zero_Digest, "failure clears session and outputs"); end Cleared;
    procedure Read_Choice is
+      Fresh : C.Proposal; Current_Decision, Current_Closure : Digest;
    begin
       MC_Store.Read_Object (Store, Decision, Wire, Used, Status); Need ("read choice record");
       Expect (Used >= 368 and then Wire (1 .. 8) = Bytes'(78,73,65,67,67,72,48,50) and then Wire (9 .. 40) = Expected, "exact proposal binding");
+      C.Reobserve (Store, Integer (Root), (others => 1), (others => 2), Context,
+         Expected, Decision, Closure, 1024, Deadline + 1, Fresh, Current_Decision, Current_Closure, Status);
+      Need ("fresh observation of complete saved choice");
+      Expect (C.Address (Fresh) /= Expected and then Current_Decision /= Decision and then Current_Closure /= Closure,
+         "new observation lifetime has distinct records without rewriting history");
+      C.Recheck (Store, Fresh, Current_Decision, Current_Closure, Deadline + 1, Status); Need ("fresh choice live recheck");
+      C.Clear (Fresh);
    end Read_Choice;
    procedure Effects is
       procedure Encoded (At_Byte : Positive; Item : C.File_Effect) is

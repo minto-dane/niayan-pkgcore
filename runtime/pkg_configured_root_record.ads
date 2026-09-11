@@ -50,7 +50,7 @@ package Pkg_Configured_Root_Record with SPARK_Mode => Off is
    -- The caller must authenticate the expected record digests and bind the
    -- returned identities to its generation. Old proposal deadlines are historical
    -- data, never renewed execution permission. Load uses a new finite deadline.
-   -- Live Pkg_Configured_Root.Verify remains required before use for execution.
+   -- Full Verify/Verify_Current and independent admission are required for use.
    -- Same store reservation and ordinary UID required; failure clears the view.
 private
    type Data;

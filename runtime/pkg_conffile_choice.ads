@@ -29,6 +29,26 @@ package Pkg_Conffile_Choice with SPARK_Mode => Off is
       Decision, Closure : out Digest; Status : out Outcome);
    procedure Recheck (Store : MC_Store.Store; Value : in out Proposal;
       Decision, Closure : Digest; Deadline : Counter; Status : out Outcome);
+   procedure Reobserve (Store : in out MC_Store.Store; Root_FD : Integer;
+      Root_ID, Transaction : Identity; Context : Digest;
+      Saved_Proposal, Saved_Decision, Saved_Closure : Digest; Limit, Deadline : Counter;
+      Value : in out Proposal; Decision, Closure : out Digest; Status : out Outcome);
+   -- Explicit fresh observation under the CURRENT open store reservation.
+   -- First checks saved records/members, then reobserves originals, declarations,
+   -- local inode/attributes/content and absent backup destination through the
+   -- ordinary Prepare/Resolve path. The new proposal may differ ONLY in its
+   -- observation deadline; the decision only in that proposal reference. Saved
+   -- closure membership must equal the freshly derived sources plus saved IDs.
+   -- Returns a new bounded proposal/decision/closure, never extends or revives
+   -- the old proposal. Historical deadline and stored bytes remain unchanged.
+   -- A new finite observation deadline is NOT renewed consent or execution
+   -- authority. Caller must authenticate expected scope, root FD and saved
+   -- choices independently at the enclosing managed boundary. Mount/inode or
+   -- attribute changes require a new plan; this does not migrate reboot identities.
+   -- No effect application or pin. Failed calls clear outputs/session; completed
+   -- unreferenced observation objects may remain. Missing listed objects are
+   -- rejected before native reconstruction. Same current Store remains required
+   -- for all later operations on the returned proposal.
    procedure Read_Effects (Store : MC_Store.Store; Value : in out Proposal;
       Decision, Closure : Digest; Deadline : Counter;
       Target, Backup : out File_Effect; Status : out Outcome);

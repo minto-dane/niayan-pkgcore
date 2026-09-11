@@ -337,4 +337,74 @@ package body Pkg_Configured_Root with SPARK_Mode => Off is
       when Storage_Error => Cleanup; Archive := Zero_Digest; Status := Exhausted;
       when others => Cleanup; Archive := Zero_Digest; Status := Indeterminate;
    end Verify;
+   procedure Verify_Current (Store : in out MC_Store.Store; Root_FD : Integer;
+      Manifest, Retained, Base_Manifest, Catalog, Catalog_Closure : Digest;
+      Root_ID, Transaction : Identity; Context : Digest; Native_Architecture : String;
+      Limit, Deadline : Counter; Archive : out Digest; Status : out Outcome) is
+      package Records renames Pkg_Configured_Root_Record;
+      type Choices_Access is access R.Choices;
+      type Buffer_Access is access Bytes;
+      procedure Free is new Ada.Unchecked_Deallocation (R.Choices, Choices_Access);
+      procedure Free is new Ada.Unchecked_Deallocation (Bytes, Buffer_Access);
+      procedure Free is new Ada.Unchecked_Deallocation (C.Proposal, R.Proposal_Access);
+      Saved : Records.View; Bound : Records.Root_Binding;
+      Selected : Choices_Access := null; Wire : Buffer_Access := null;
+      Choice : Records.Saved_Choice; New_Manifest, New_Archive, New_Retained : Digest; Used : Natural;
+      Interrupted : exception;
+      procedure Need is begin if Status /= OK then raise Interrupted; end if; end Need;
+      procedure Refuse (Reason : Outcome := Conflict) is begin Status := Reason; raise Interrupted; end Refuse;
+      procedure Cleanup is
+      begin
+         if Selected /= null then for Ref of Selected.all loop Free (Ref.Value); end loop; end if;
+         Free (Selected); Free (Wire); Records.Clear (Saved);
+      end Cleanup;
+   begin
+      Archive := Zero_Digest; Status := Denied; if MC_Posix.Euid = 0 then return; end if;
+      Status := Invalid_Input; if Root_FD < 0 then return; end if;
+      Records.Load (Store, Manifest, Retained, Limit, Deadline, Saved, Status); Need;
+      Bound := Records.Binding (Saved);
+      if Bound.Base.Manifest /= Base_Manifest or else Bound.Base.Catalog /= Catalog
+         or else Bound.Base.Closure /= Catalog_Closure or else Bound.Base.Root_ID /= Root_ID
+         or else Bound.Base.Transaction /= Transaction or else Bound.Base.Context /= Context then Refuse; end if;
+      if Native_Architecture'Length not in 1 .. 4_096 then Refuse (Invalid_Input); end if;
+      declare Text : Bytes (1 .. Native_Architecture'Length); begin
+         for I in Text'Range loop Text (I) := Character'Pos (Native_Architecture (Native_Architecture'First + I - 1)); end loop;
+         if MC_SHA256.Hash (Text) /= Bound.Architecture then Refuse; end if;
+      end;
+      Selected := new R.Choices (1 .. Records.Choice_Count (Saved));
+      for I in Selected'Range loop
+         Records.Read_Choice (Saved, I, Choice, Status); Need; Selected (I).Value := new C.Proposal;
+         C.Reobserve (Store, Root_FD, Root_ID, Transaction, Context, Choice.Proposal, Choice.Decision, Choice.Closure,
+            Limit, Deadline, Selected (I).Value.all, Selected (I).Decision, Selected (I).Closure, Status); Need;
+      end loop;
+      Build (Store, Base_Manifest, Catalog, Catalog_Closure, Root_ID, Transaction, Context, Native_Architecture,
+         Selected.all, Limit, Deadline, New_Manifest, New_Archive, New_Retained, Status); Need;
+      if New_Archive /= Bound.Archive or else New_Retained = Zero_Digest then Refuse; end if;
+      Wire := new Bytes (1 .. Records.Max_Manifest_Bytes);
+      MC_Store.Read_Object (Store, New_Manifest, Wire.all, Used, Status); Need;
+      if MC_SHA256.Hash (Wire (1 .. Used)) /= New_Manifest then Refuse (Corrupt); end if;
+      if Used < Header_Size + 96 * Selected'Length then Refuse (Corrupt); end if;
+      for I in Selected'Range loop
+         Records.Read_Choice (Saved, I, Choice, Status); Need;
+         declare Start : constant Natural := Header_Size + 96 * (I - 1); begin
+            Wire (Start + 1 .. Start + 32) := Choice.Proposal;
+            Wire (Start + 33 .. Start + 64) := Choice.Decision;
+            Wire (Start + 65 .. Start + 96) := Choice.Closure;
+         end;
+      end loop;
+      -- Build authenticates the catalog-derived closure and complete layout;
+      -- Reobserve derived each saved choice closure from current sources. Load
+      -- already checked the exact union of those closures and generated objects.
+      -- Compare the whole generated manifest, including all absent-file choices
+      -- and every configured entry, without rewriting any historical object.
+      if MC_SHA256.Hash (Wire (1 .. Used)) /= Manifest then Refuse; end if;
+      for Ref of Selected.all loop
+         C.Recheck (Store, Ref.Value.all, Ref.Decision, Ref.Closure, Deadline, Status); Need;
+      end loop;
+      Tick (Deadline, Status); Need; Archive := Bound.Archive; Cleanup;
+   exception
+      when Interrupted => Cleanup; Archive := Zero_Digest;
+      when Storage_Error => Cleanup; Archive := Zero_Digest; Status := Exhausted;
+      when others => Cleanup; Archive := Zero_Digest; Status := Indeterminate;
+   end Verify_Current;
 end Pkg_Configured_Root;

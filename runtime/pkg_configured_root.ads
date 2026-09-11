@@ -14,6 +14,24 @@ package Pkg_Configured_Root with SPARK_Mode => Off is
       Base_Manifest, Catalog, Catalog_Closure : Digest; Root_ID, Transaction : Identity;
       Context : Digest; Native_Architecture : String; Selected : Pkg_Root_Configuration.Choices;
       Limit, Deadline : Counter; Archive : out Digest; Status : out Outcome);
+   procedure Verify_Current (Store : in out MC_Store.Store; Root_FD : Integer;
+      Manifest, Retained, Base_Manifest, Catalog, Catalog_Closure : Digest;
+      Root_ID, Transaction : Identity; Context : Digest; Native_Architecture : String;
+      Limit, Deadline : Counter; Archive : out Digest; Status : out Outcome);
+   -- For a newly acquired Store reservation: inspect the complete saved closure,
+   -- freshly reobserve each recorded choice against the supplied current root,
+   -- then verify native ownership/layout and rebuild through the ordinary path.
+   -- Every output byte, prefix/content, position and non-session binding must
+   -- match. Only fresh proposal deadlines and their derived record references
+   -- differ; those records are not substituted into the historical generation.
+   -- Old choice closures are checked against freshly derived sources. No missing
+   -- listed object is recreated before inspection. New unpinned cache/session
+   -- objects may remain even on failure; the returned archive is the saved one.
+   -- Does not revive an old proposal or authenticate root FD, scope, consent,
+   -- request freshness or recovery permission. Callers must provide fresh managed
+   -- admission, hold the current root/CAS reservations and recheck at use. Mount,
+   -- inode and attribute identity changes are refused; reboot migration and
+   -- accepted-state reconciliation require separate rules, not normalization.
    -- Build a complete tar from a freshly verified configuration layout. Original
    -- base spans remain byte-exact; regular configuration entries use retained
    -- attributes/content. Root/parents and hardlink targets precede dependents.
