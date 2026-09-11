@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import tarfile
 from make_deb_control_fixtures import member, tar
+from make_deb_payload_fixtures import entry, archive
 
 DEST = Path(__file__).resolve().parent/'fixtures/conffiles'
 
@@ -40,6 +41,9 @@ def fixtures():
               ('./etc/fixture.conf', b'second\n', tarfile.REGTYPE, '')]
     cases += [
         ('layout', b'/etc/fixture.conf\n', layout, True),
+        ('layout-stream', b'/etc/fixture.conf\n', layout + [('./etc/alias', b'', tarfile.LNKTYPE, './etc/chain'),
+            ('./etc/chain', b'', tarfile.LNKTYPE, './etc/ordinary'), ('./etc/ordinary', b'plain\0\xff' + b'x' * 65_530, tarfile.REGTYPE, ''),
+            ('./etc/symbolic', b'', tarfile.SYMTYPE, 'ordinary')], True),
         ('layout-collision', b'/etc/fixture.conf\n', layout + [('./etc/fixture.conf.save', b'packaged', tarfile.REGTYPE, '')], True),
         ('layout-linked', b'/etc/fixture.conf\n', layout + [('./etc/alias', b'', tarfile.LNKTYPE, './etc/fixture.conf')], True),
     ]
@@ -48,7 +52,10 @@ def fixtures():
         metadata = [('./control', control.replace(b'Version: 1', b'Version: 2') if name in ('updated', 'omitted', 'remove-current') or name.startswith('layout') else control, tarfile.REGTYPE, '')]
         if declarations is not None:
             metadata.append(('./conffiles', declarations, tarfile.REGTYPE, ''))
-        raw = b'!<arch>\n'+member('debian-binary', b'2.0\n')+member('control.tar', tar(metadata))+member('data.tar', tar(files))
+        payload = archive([entry(path, data, kind=kind, link=link, uid=0, gid=0, mtime=0,
+            mode=0o755 if kind == tarfile.DIRTYPE else 0o777 if kind == tarfile.SYMTYPE else 0o644)
+            for path, data, kind, link in files], tarfile.USTAR_FORMAT) if name == 'layout-stream' else tar(files)
+        raw = b'!<arch>\n'+member('debian-binary', b'2.0\n')+member('control.tar', tar(metadata))+member('data.tar', payload)
         yield name+'.deb', raw, accepted
 
 

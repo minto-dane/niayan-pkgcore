@@ -201,7 +201,13 @@ mkdir -p "$D/run_root_configuration_tests"
 mkdir -p "$D/"run_root_configuration_tests/store
 mkdir -p "$D/"run_root_configuration_tests/root
 echo 'Running run_root_configuration_tests'
-timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_root_configuration_tests" "$D/"run_root_configuration_tests/store "$D/"run_root_configuration_tests/root "$PWD/"tests/fixtures/conffiles
+if timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_root_configuration_tests" "$D/"run_root_configuration_tests/store "$D/"run_root_configuration_tests/root "$PWD/"tests/fixtures/conffiles > "$D/configured-root-native.log" 2>&1; then
+  cat "$D/configured-root-native.log"
+else
+  cat "$D/configured-root-native.log"
+  exit 1
+fi
+python3 "$PWD/tests/check_configured_root.py" --native "$D/configured-root-native.log" --cas "$D/run_root_configuration_tests/store" --output "$D/configured-root-oracle"
 mkdir -p "$D/run_tar_output_tests"
 mkdir -p "$D/"run_tar_output_tests/store
 mkdir -p "$D/"run_tar_output_tests/export

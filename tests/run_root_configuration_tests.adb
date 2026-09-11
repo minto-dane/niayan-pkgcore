@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Command_Line; with Ada.Unchecked_Deallocation; with Interfaces.C;
 with MC_Types; use MC_Types;
+with Ada.Text_IO; with MC_Hex; with Pkg_Configured_Root;
 with MC_Clock; with MC_FS; with MC_Posix; with MC_Runtime; with MC_Store;
 with Pkg_Conffile_Choice; with Pkg_Conffile_Transition; with Pkg_Root_Configuration;
 with Pkg_Root_Archive; with Pkg_Catalog_Store; with Pkg_Catalog_Retention;
@@ -72,9 +73,52 @@ procedure Run_Root_Configuration_Tests with SPARK_Mode => Off is
       Expect (P.Byte_Strings.To_String (Item.Path) = Name, "canonical final path order");
       Expect (Item.Configuration.Source = Kind and then (Item.Base_Claim /= 0) = (Kind = C.No_File), "exact base or configuration source");
    end Check_Entry;
+   procedure Serialize (Label_Text : String; Verify_Again : Boolean := False) is
+      Record_ID, Root_ID, Retained_ID, Again : Digest;
+   begin
+      Pkg_Configured_Root.Build (Store, Manifest, Catalog, Closure, (others => 1), (others => 2), Context,
+         "amd64", Selected, Limit, Deadline, Record_ID, Root_ID, Retained_ID, Status); Need ("configured full root " & Label_Text);
+      Expect (Record_ID /= Zero_Digest and then Root_ID /= Zero_Digest and then Retained_ID /= Zero_Digest, "complete configured result");
+      Ada.Text_IO.Put_Line ("CONFIGURED " & Label_Text & " " & MC_Hex.Encode (Record_ID) & " " & MC_Hex.Encode (Root_ID)
+         & " " & MC_Hex.Encode (Retained_ID));
+      if Verify_Again then
+         Pkg_Configured_Root.Verify (Store, Record_ID, Retained_ID, Manifest, Catalog, Closure, (others => 1), (others => 2),
+            Context, "amd64", Selected, Limit, Deadline, Again, Status); Need ("exact configured verification");
+         Expect (Again = Root_ID, "deterministic configured root identity");
+         Pkg_Configured_Root.Verify (Store, Record_ID, Retained_ID, Manifest, Catalog, Closure, (others => 1), (others => 2),
+            (others => 9), "amd64", Selected, Limit, Deadline, Again, Status);
+         Expect (Status = Conflict and then Again = Zero_Digest, "foreign configured context refused");
+         declare Private_CAS : MC_FS.Root; Missing_File : MC_FS.File;
+            Before_Record : constant Digest := Record_ID; Before_Root : constant Digest := Root_ID;
+            Before_Retained : constant Digest := Retained_ID;
+            H : constant String := MC_Hex.Encode (Root_ID);
+         begin
+            MC_FS.Open_Root (Ada.Command_Line.Argument (1), Private_CAS, Status); Need ("private configured output fault");
+            MC_FS.Remove (Private_CAS, "objects/" & H (1 .. 2) & "/" & H (3 .. 64), False, Status);
+            MC_FS.Close (Private_CAS); Need ("remove only generated root");
+            Pkg_Configured_Root.Verify (Store, Record_ID, Retained_ID, Manifest, Catalog, Closure, (others => 1), (others => 2),
+               Context, "amd64", Selected, Limit, Deadline, Again, Status);
+            Expect (Status /= OK and then Again = Zero_Digest, "lost configured output not silently repaired");
+            MC_Store.Open_Object (Store, Root_ID, Missing_File, Status); MC_FS.Close (Missing_File);
+            Expect (Status /= OK, "verification left missing output absent");
+            Pkg_Configured_Root.Build (Store, Manifest, Catalog, Closure, (others => 1), (others => 2), Context,
+               "amd64", Selected, Limit, Deadline, Record_ID, Root_ID, Retained_ID, Status); Need ("explicit rebuild after isolated loss");
+            Expect (Record_ID = Before_Record and then Root_ID = Before_Root and then Retained_ID = Before_Retained,
+               "explicit rebuild keeps exact saved identities");
+            Pkg_Configured_Root.Build (Store, Manifest, Catalog, Closure, (others => 1), (others => 2), Context,
+               "amd64", Selected, 4_096, Deadline, Record_ID, Root_ID, Retained_ID, Status);
+            Expect (Status = Exhausted and then Record_ID = Zero_Digest and then Root_ID = Zero_Digest and then Retained_ID = Zero_Digest,
+               "configured total capacity includes headers and padding");
+         end;
+         Pkg_Configured_Root.Build (Store, Manifest, Catalog, Closure, (others => 1), (others => 2), Context,
+            "amd64", Selected, Limit, 0, Record_ID, Root_ID, Retained_ID, Status);
+         Expect (Status = Stale and then Record_ID = Zero_Digest and then Root_ID = Zero_Digest and then Retained_ID = Zero_Digest,
+            "expired configured output cleared");
+      end if;
+   end Serialize;
 begin
    Expect (Ada.Command_Line.Argument_Count = 3, "store root and media");
-   MC_Runtime.Initialize (Status); Need ("runtime"); MC_Clock.Boottime_Milliseconds (Deadline, Status); Need ("clock"); Deadline := Deadline + 240_000;
+   MC_Runtime.Initialize (Status); Need ("runtime"); MC_Clock.Boottime_Milliseconds (Deadline, Status); Need ("clock"); Deadline := Deadline + 600_000;
    MC_Store.Initialize (Ada.Command_Line.Argument (1), Store, Status); Need ("CAS");
    MC_FS.Open_Root (Ada.Command_Line.Argument (3), Media, Status); Need ("media");
    declare N : aliased constant String := Ada.Command_Line.Argument (2) & ASCII.NUL;
@@ -97,11 +141,15 @@ begin
    Check_Entry (4, "etc/fixture.conf.save", C.Vendor_Payload);
    Expect (Item.Configuration.Object = Incoming and then P.Byte_Strings.To_String (Item.Configuration.Source_Path) = Path, "backup retains full original and source name");
    R.Read_Entry (Layout, 5, Item, Status); Expect (Status = Invalid_Input and then Item.Base_Claim = 0 and then P.Byte_Strings.Length (Item.Path) = 0, "no partial entry on invalid index");
+   Serialize ("keep", True);
    Project ((1 .. 0 => <>)); Rejected ("unresolved declaration cannot fall back to packaged bytes");
    Project (Selected, Intent => (others => 9)); Rejected ("foreign intent rejected");
    Project ((1 => Selected (1), 2 => Selected (1))); Rejected ("duplicate configuration rejected");
    Choose (T.Use_Vendor); Project (Selected); Need ("vendor replacement projected");
    Check_Entry (3, "etc/fixture.conf", C.Vendor_Payload); Check_Entry (4, "etc/fixture.conf.save", C.Local_Observation);
+   Serialize ("vendor");
+   Base ("layout-stream"); Choose; Serialize ("links");
+   Base ("layout");
    Choose (Destination => "/missing/save"); Project (Selected); Rejected ("missing final backup parent rejected");
    Choose; Project (Selected, Until_Time => 0); Rejected ("expired configuration projection", Stale);
    Base ("layout-collision"); Choose; Project (Selected); Rejected ("backup cannot overwrite a packaged path");
@@ -117,6 +165,18 @@ begin
    Project (Selected); Rejected ("late local change invalidates complete layout", Stale);
    C.Read_Scope (Store, Proposal.all, Decision, Kept, Deadline, Scope, Status);
    Expect (Status = Invalid_Input and then Scope.Root_ID = Zero_Identity and then Scope.Context = Zero_Digest, "invalid scope output cleared");
+   Choose;
+   declare N : aliased constant String := "etc/fixture.conf" & ASCII.NUL; FD : MC_Posix.FD;
+      Record_ID, Root_ID, Retained_ID : Digest;
+   begin
+      FD := MC_Posix.Openat (Root, N'Address, MC_Posix.O_RDONLY + MC_Posix.O_NOFOLLOW + MC_Posix.O_CLOEXEC, 0);
+      Expect (FD >= 0 and then MC_Posix.Fchmod (FD, 8#600#) = 0, "change permission after configured choice");
+      Ignored := MC_Posix.Close (FD);
+      Pkg_Configured_Root.Build (Store, Manifest, Catalog, Closure, (others => 1), (others => 2), Context,
+         "amd64", Selected, Limit, Deadline, Record_ID, Root_ID, Retained_ID, Status);
+      Expect (Status = Stale and then Record_ID = Zero_Digest and then Root_ID = Zero_Digest and then Retained_ID = Zero_Digest,
+         "live changed source refuses entire configured root");
+   end;
    declare N : aliased constant String := "etc/fixture.conf" & ASCII.NUL; begin
       Expect (MC_Posix.Unlinkat (Root, N'Address, 0) = 0, "delete private local setting");
    end;
@@ -126,8 +186,15 @@ begin
    Expect (Retained.Proposal = C.Address (Proposal.all) and then Retained.Decision = Decision
       and then Retained.Closure = Kept and then P.Byte_Strings.To_String (Retained.Path) = Path, "exact deleted target references");
    Check_Entry (1, ""); Check_Entry (2, "etc"); Check_Entry (3, "etc/fixture.conf.save", C.Vendor_Payload);
+   Serialize ("deleted");
    Choose (T.Use_Vendor, ""); Project (Selected); Need ("restore deleted setting from vendor"); Expect (R.Count (Layout) = 3, "restore requires no local backup");
    Check_Entry (3, "etc/fixture.conf", C.Vendor_Payload);
+   Serialize ("restored");
+   declare N : aliased constant String := "etc/fixture.conf" & ASCII.NUL; FD : MC_Posix.FD; begin
+      FD := MC_Posix.Openat (Root, N'Address, MC_Posix.O_WRONLY + MC_Posix.O_CREAT + MC_Posix.O_EXCL + MC_Posix.O_CLOEXEC, 8#600#);
+      Expect (FD >= 0, "empty regular local configuration"); Ignored := MC_Posix.Close (FD);
+   end;
+   Choose; Serialize ("empty");
    R.Clear (Layout); Free (Proposal); Ignored := MC_Posix.Close (Root); Root := -1;
    MC_FS.Close (Media); MC_Store.Close (Store); Report;
 exception when others => R.Clear (Layout); Free (Proposal); Ignored := MC_Posix.Close (Root); MC_FS.Close (File); MC_FS.Close (Media); MC_Store.Close (Store); raise;
