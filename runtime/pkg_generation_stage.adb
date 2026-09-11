@@ -343,32 +343,15 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
    function Retained_Manifest (C : Retained_Generation) return Digest is (Manifest (C.Saved));
    procedure Close (C : in out Retained_Generation) is
    begin Close (C.Saved); end Close;
-   procedure Prepare_Root
-     (Root_Path, State_Path, Store_Path, Socket_Path : String;
-      Expected_Manifest, Expected_Worker : Digest; Deadline : Counter; Status : out Outcome) is
-      C : Verified_Generation; Store : MC_Store.Store; M, After : GM.Manifest;
+   procedure Open_Prepared_Archive (Store : in out MC_Store.Store; M : GM.Manifest;
+      Deadline : Counter; Root_Manifest, Archive : out Digest; Size, Entries : out Counter;
+      Source : in out MC_FS.File; Status : out Outcome) is
       Header : Bytes (1 .. Pkg_Root_Archive.Header_Size); Used : Natural;
-      Source, Root_Wire : MC_FS.File; Info : MC_FS.Entry_Info;
-      Archive, Root_Manifest : Digest := Zero_Digest;
+      Root_Wire : MC_FS.File; Info : MC_FS.Entry_Info;
       Saved : Pkg_Configured_Root_Record.View; Bound : Pkg_Configured_Root_Record.Root_Binding;
-      Size, Entries : Counter := 0;
-      Delivered : Boolean := False;
-      procedure Done is
-      begin
-         MC_FS.Close (Root_Wire); MC_FS.Close (Source); MC_Store.Close (Store); Close (C);
-      end Done;
    begin
-      Status := Denied; if MC_Posix.Euid = 0 then return; end if;
-      Status := Invalid_Input; if Expected_Worker = Zero_Digest then return; end if;
-      Verify_And_Hold (Root_Path, State_Path, Store_Path, Expected_Manifest, C, Deadline, Status);
-      if Status = OK then Read_Binding (C.State, Expected_Manifest, M, Status); end if;
-      if Status = OK and then M.Format not in GM.Root_V5 | GM.Configured_V6 then Status := Denied; end if;
-      -- The verified stage/root remain reserved while CAS is reacquired. All
-      -- retained inputs and admission are checked again under this reservation.
-      if Status = OK then MC_Store.Open (Store_Path, Store, Status); end if;
-      if Status = OK then MC_Store.Check_Pin (Store, M.Transaction_ID, Expected_Manifest, Status); end if;
-      if Status = OK then Check_Content (Store, M, Expected_Manifest, "prepare-root", Deadline, Status); end if;
-      if Status = OK then Gate (M, Expected_Manifest, "prepare-root", Deadline, Status); end if;
+      Root_Manifest := Zero_Digest; Archive := Zero_Digest; Size := 0; Entries := 0;
+      Status := OK;
       if Status = OK and then M.Format = GM.Configured_V6 then
          Pkg_Configured_Root_Record.Load (Store, M.Configured_Root, M.Configuration_Closure,
             MC_Store.Max_Object_Size, Deadline, Saved, Status);
@@ -389,6 +372,36 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       if Status = OK then MC_Store.Open_Object (Store, Archive, Source, Status); end if;
       if Status = OK then MC_FS.Info (Source, Info, Status); end if;
       if Status = OK and then (Info.Kind /= MC_FS.Regular or else Info.Size /= Size) then Status := Corrupt; end if;
+      MC_FS.Close (Root_Wire);
+   exception when others => MC_FS.Close (Root_Wire); MC_FS.Close (Source); Status := Indeterminate;
+   end Open_Prepared_Archive;
+   procedure Prepare_Root
+     (Root_Path, State_Path, Store_Path, Socket_Path : String;
+      Expected_Manifest, Expected_Worker : Digest; Deadline : Counter; Status : out Outcome) is
+      C : Verified_Generation; Store : MC_Store.Store; M, After : GM.Manifest;
+      Source : MC_FS.File;
+      Archive, Root_Manifest : Digest := Zero_Digest;
+      Size, Entries : Counter := 0;
+      Delivered : Boolean := False;
+      procedure Done is
+      begin
+         MC_FS.Close (Source); MC_Store.Close (Store); Close (C);
+      end Done;
+   begin
+      Status := Denied; if MC_Posix.Euid = 0 then return; end if;
+      Status := Invalid_Input; if Expected_Worker = Zero_Digest then return; end if;
+      Verify_And_Hold (Root_Path, State_Path, Store_Path, Expected_Manifest, C, Deadline, Status);
+      if Status = OK then Read_Binding (C.State, Expected_Manifest, M, Status); end if;
+      if Status = OK and then M.Format not in GM.Root_V5 | GM.Configured_V6 then Status := Denied; end if;
+      -- The verified stage/root remain reserved while CAS is reacquired. All
+      -- retained inputs and admission are checked again under this reservation.
+      if Status = OK then MC_Store.Open (Store_Path, Store, Status); end if;
+      if Status = OK then MC_Store.Check_Pin (Store, M.Transaction_ID, Expected_Manifest, Status); end if;
+      if Status = OK then Check_Content (Store, M, Expected_Manifest, "prepare-root", Deadline, Status); end if;
+      if Status = OK then Gate (M, Expected_Manifest, "prepare-root", Deadline, Status); end if;
+      if Status = OK then
+         Open_Prepared_Archive (Store, M, Deadline, Root_Manifest, Archive, Size, Entries, Source, Status);
+      end if;
       if Status = OK then
          Gate (M, Expected_Manifest, "prepare-root", Deadline, Status);
          if Status = OK then
@@ -407,6 +420,73 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       Done;
    exception when others => Done; Status := Indeterminate;
    end Prepare_Root;
+   procedure Close (C : in out Reinspected_Generation) is
+   begin
+      MC_FS.Close (C.Archive); MC_Store.Close (C.Store); Close (C.Stage);
+      C.Physical := (others => <>); C.Deadline := 0; C.Verified := False;
+   end Close;
+   function Held (C : Reinspected_Generation) return Boolean is
+      Status : Outcome;
+   begin
+      if not C.Verified or else not Held (C.Stage) then return False; end if;
+      Time_Left (C.Deadline, Status); return Status = OK;
+   end Held;
+   function Root_Observation (C : Reinspected_Generation) return Pkg_Root_Preparation.Root_Identity is
+   begin
+      if Held (C) then return C.Physical; else return (others => <>); end if;
+   end Root_Observation;
+   procedure Reinspect_Root_And_Hold
+     (Root_Path, State_Path, Store_Path, Socket_Path : String;
+      Expected_Manifest, Expected_Worker : Digest; C : in out Reinspected_Generation;
+      Deadline : Counter; Status : out Outcome) is
+      use type Pkg_Root_Preparation.Root_Identity;
+      M, After : GM.Manifest; Root_Manifest, Archive : Digest;
+      Size, Entries, Original_Deadline, After_Deadline : Counter := 0;
+      Physical, After_Physical : Pkg_Root_Preparation.Root_Identity;
+      Delivered : Boolean := False;
+   begin
+      -- Never silently release a caller's existing reservation to replace it.
+      Status := Conflict; if C.Verified then return; end if;
+      Status := Denied; if MC_Posix.Euid = 0 then return; end if;
+      Status := Invalid_Input; if Expected_Worker = Zero_Digest then return; end if;
+      Verify_And_Hold (Root_Path, State_Path, Store_Path, Expected_Manifest, C.Stage, Deadline, Status);
+      if Status = OK then Read_Binding (C.Stage.State, Expected_Manifest, M, Status); end if;
+      if Status = OK and then M.Format not in GM.Root_V5 | GM.Configured_V6 then Status := Denied; end if;
+      if Status = OK then MC_Store.Open (Store_Path, C.Store, Status); end if;
+      if Status = OK then MC_Store.Check_Pin (C.Store, M.Transaction_ID, Expected_Manifest, Status); end if;
+      if Status = OK then Check_Content (C.Store, M, Expected_Manifest, "reinspect-root", Deadline, Status); end if;
+      if Status = OK then Gate (M, Expected_Manifest, "reinspect-root", Deadline, Status); end if;
+      if Status = OK then
+         Observe_Root (Expected_Manifest, M.Stage_ID, "stage:reinspect-root", Original_Deadline, Physical, Status);
+      end if;
+      if Status = OK and then (Original_Deadline = 0 or else Physical.Mount_ID = 0 or else Physical.Inode = 0)
+      then Status := Denied; end if;
+      if Status = OK then
+         Open_Prepared_Archive (C.Store, M, Deadline, Root_Manifest, Archive, Size, Entries, C.Archive, Status);
+      end if;
+      if Status = OK then Gate (M, Expected_Manifest, "reinspect-root", Deadline, Status); end if;
+      if Status = OK then
+         Delivered := True;
+         Pkg_Root_Preparation.Reinspect (Socket_Path, Expected_Manifest, Root_Manifest, Archive,
+            Expected_Worker, M.Stage_ID, Size, Entries, Original_Deadline, Deadline, Physical,
+            MC_FS.Native (C.Archive), MC_Store.Native_Reservation (C.Store), Status);
+      end if;
+      if Status = OK then Read_Binding (C.Stage.State, Expected_Manifest, After, Status); end if;
+      if Status = OK then MC_Store.Check_Pin (C.Store, M.Transaction_ID, Expected_Manifest, Status); end if;
+      if Status = OK then Check_Content (C.Store, After, Expected_Manifest, "root-reinspected", Deadline, Status); end if;
+      if Status = OK then
+         Observe_Root (Expected_Manifest, M.Stage_ID, "stage:root-reinspected", After_Deadline, After_Physical, Status);
+      end if;
+      if Status = OK and then (After_Physical /= Physical or else After_Deadline /= Original_Deadline)
+      then Status := Conflict; end if;
+      if Status = OK then Gate (After, Expected_Manifest, "root-reinspected", Deadline, Status); end if;
+      if Status = OK then
+         C.Physical := Physical; C.Deadline := Deadline; C.Verified := True;
+      else
+         Close (C); if Delivered then Status := Indeterminate; end if;
+      end if;
+   exception when others => Close (C); Status := Indeterminate;
+   end Reinspect_Root_And_Hold;
    procedure Inspect
      (Root_Path, State_Path, Store_Path : String; Expected_Manifest : Digest; Deadline : Counter;
       Status : out Outcome) is

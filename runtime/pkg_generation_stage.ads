@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
-with MC_FS; with Pkg_Generation_Configuration;
+with MC_FS; with MC_Store; with Pkg_Root_Preparation; with Pkg_Generation_Configuration;
 generic
    with procedure Authorize
      (Manifest, Plan, Evidence : Digest; Stage_ID, Transaction_ID : Identity;
@@ -40,6 +40,28 @@ package Pkg_Generation_Stage with SPARK_Mode => Off is
    procedure Advance
      (Root_Path, State_Path, Store_Path : String; Expected_Manifest : Digest;
       Completed_Batches : out Natural; Deadline : Counter; Status : out Outcome);
+   type Reinspected_Generation is limited private;
+   generic
+      with procedure Observe_Root
+        (Generation : Digest; Stage_ID : Identity; Phase : String;
+         Original_Deadline : out Counter; Root : out Pkg_Root_Preparation.Root_Identity;
+         Status : out Outcome);
+   procedure Reinspect_Root_And_Hold
+     (Root_Path, State_Path, Store_Path, Socket_Path : String;
+      Expected_Manifest, Expected_Worker : Digest; C : in out Reinspected_Generation;
+      Deadline : Counter; Status : out Outcome);
+   function Held (C : Reinspected_Generation) return Boolean;
+   function Root_Observation (C : Reinspected_Generation) return Pkg_Root_Preparation.Root_Identity;
+   procedure Close (C : in out Reinspected_Generation);
+   -- A distinct observation handle holds generation/root/CAS reservations and
+   -- the archive FD until Close, including after its deadline expires. Held
+   -- and Root_Observation stop exposing success at expiry. No implicit thaw.
+   -- Observe_Root is mandatory and independent of the service response. It
+   -- authenticates the saved extraction deadline and frozen mount identity,
+   -- and retains bank/all-writer/mount exclusion for the WHOLE handle lifetime.
+   -- The provider is borrowed: its owner releases it only after Close. Neither
+   -- this SDK nor a read-only view alone establishes global quiescence. This
+   -- type cannot be passed to logical publication or treated as boot authority.
    procedure Prepare_Root
      (Root_Path, State_Path, Store_Path, Socket_Path : String;
       Expected_Manifest, Expected_Worker : Digest; Deadline : Counter; Status : out Outcome);
@@ -84,5 +106,13 @@ private
    end record;
    type Retained_Generation is limited record
       Saved : Verified_Generation;
+   end record;
+   type Reinspected_Generation is limited record
+      Stage : Verified_Generation;
+      Store : MC_Store.Store;
+      Archive : MC_FS.File;
+      Physical : Pkg_Root_Preparation.Root_Identity;
+      Deadline : Counter := 0;
+      Verified : Boolean := False;
    end record;
 end Pkg_Generation_Stage;

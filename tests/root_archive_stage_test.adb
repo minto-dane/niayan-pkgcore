@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 -- Artificial signatures and exact fixture authorization; never a site provider.
 with Ada.Command_Line; with Ada.Directories; with Ada.Text_IO; with Ada.Unchecked_Deallocation; with Interfaces.C; with System;
-with MC_Codec; with MC_FS; with MC_Hex; with MC_Posix; with MC_SHA256; with MC_Text;
+with MC_Clock; with Pkg_Root_Preparation; with MC_Codec; with MC_FS; with MC_Hex; with MC_Posix; with MC_SHA256; with MC_Text;
 with Pkg_Configured_Root; with Pkg_Conffile_Choice; with Pkg_Conffile_Transition; with Pkg_Root_Configuration;
 with Pkg_Archive_Supply; with Pkg_Supply_Map; with Pkg_Supply_Policy;
 with Pkg_Deb_Final_Set; with Pkg_File_Plan; with Pkg_Generation_Descriptor;
@@ -10,7 +10,7 @@ with Test_Support; use Test_Support;
 package body Root_Archive_Stage_Test with SPARK_Mode => Off is
    package GM renames Pkg_Generation_Manifest; package FP renames Pkg_File_Plan;
    use type Interfaces.C.int; use type Interfaces.C.unsigned_long_long; use type Byte;
-   use type GM.Manifest; use type MC_FS.Entry_Kind;
+   use type Wide; use type GM.Manifest; use type MC_FS.Entry_Kind;
    procedure Run (Store : in out MC_Store.Store; Store_Path : String;
       Catalog, Closure, Root_Manifest, Archive : Digest;
       Packages : Pkg_Selected_Catalog.Selection; Deadline : Counter;
@@ -39,6 +39,7 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
       State_Path : constant String := Parent & "/archive-stage-state";
       Deny, Deny_Prepare, Deny_Post : Boolean := False;
       Prepare_Calls, Post_Calls, Source_Calls, Input_Calls : Natural := 0;
+      Reinspection_Mode : Natural := 0;
       Foreign_Root : MC_Posix.FD := -1; Closed : Interfaces.C.int;
       Deny_Source, Deny_Inputs, Missing_FD, Wrong_Source : Boolean := False;
       function Keypair (PK, SK, Seed : System.Address) return Interfaces.C.int
@@ -52,7 +53,7 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
          Epoch, Fence : Counter; Phase : String; Status : out Outcome) is
       begin
          Status := Denied;
-         if Phase in "stage:prepare-root" | "stage:root-prepared" then
+         if Phase in "stage:prepare-root" | "stage:root-prepared" | "stage:reinspect-root" | "stage:root-reinspected" then
             declare Other : MC_Store.Store; Result : Outcome; begin
                MC_Store.Open (Store_Path, Other, Result);
                Expect (Result /= OK, "actual CAS reservation remains held during admission");
@@ -64,13 +65,14 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
          elsif Phase = "stage:root-prepared" then
             Post_Calls := Post_Calls + 1; if Deny_Post then return; end if;
          end if;
+         if Reinspection_Mode = 5 and then Phase = "stage:root-reinspected" then return; end if;
          if Deny or else Manifest /= Expected or else Stage_ID /= M.Stage_ID or else Epoch /= M.Epoch
            or else Fence /= M.Fence or else Phase'Length <= 6 or else Phase (Phase'First .. Phase'First + 5) /= "stage:" then return; end if;
          if Plan = Zero_Digest then
             if Transaction_ID = M.Transaction_ID and then Evidence = Zero_Digest
               and then Phase in "stage:provision" | "stage:provision-root" | "stage:advance" |
                 "stage:inspect" | "stage:inspect-batch" | "stage:inspected" |
-                "stage:prepare-root" | "stage:root-prepared" then Status := OK; end if;
+                "stage:prepare-root" | "stage:root-prepared" | "stage:reinspect-root" | "stage:root-reinspected" then Status := OK; end if;
          elsif Plan = M.Batches (1).Plan and then Transaction_ID = GM.Transaction (M, 1)
            and then Evidence in Zero_Digest | Receipt then Status := OK; end if;
       end Authorize;
@@ -84,13 +86,81 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
          if not Configured or else Generation /= Expected or else Root_ID /= Identity'(others => 84)
            or else Transaction_ID /= M.Transaction_ID or else Context /= M.Intent
            or else Phase not in "stage:provision" | "stage:advance" | "stage:advance-inputs" |
-             "stage:inspect" | "stage:prepare-root" | "stage:root-prepared" then return; end if;
+             "stage:inspect" | "stage:prepare-root" | "stage:root-prepared" | "stage:reinspect-root" | "stage:root-reinspected" then return; end if;
          MC_Store.Open (Store_Path, Other, Result);
          Expect (Result /= OK, "source observation uses actual stage or engine CAS reservation"); MC_Store.Close (Other);
          if not Missing_FD then Root_FD := (if Wrong_Source and then Phase = "stage:advance-inputs" then Integer (Foreign_Root) else Source_FD); end if; Status := OK;
       end Observe;
       package Stage is new Pkg_Generation_Stage (Authorize, Observe);
       package Default_Stage is new Pkg_Generation_Stage (Authorize);
+      procedure Physical_Observation (Generation : Digest; Stage_ID : Identity; Phase : String;
+         Original_Deadline : out Counter; Root : out Pkg_Root_Preparation.Root_Identity; Result : out Outcome) is
+         Input : Ada.Text_IO.File_Type;
+      begin
+         Original_Deadline := 0; Root := (others => <>); Result := Denied;
+         if Reinspection_Mode = 1 or else Generation /= Expected or else Stage_ID /= M.Stage_ID
+           or else Phase not in "stage:reinspect-root" | "stage:root-reinspected" then return; end if;
+         -- Explicit VM fixture bridge, not a production mount/authority provider.
+         Ada.Text_IO.Open (Input, Ada.Text_IO.In_File, Parent & "/frozen-root.txt");
+         Original_Deadline := Counter'Value (Ada.Text_IO.Get_Line (Input));
+         Root.Mount_ID := Wide'Value (Ada.Text_IO.Get_Line (Input));
+         Root.Inode := Wide'Value (Ada.Text_IO.Get_Line (Input));
+         Root.Device_Major := Word'Value (Ada.Text_IO.Get_Line (Input));
+         Root.Device_Minor := Word'Value (Ada.Text_IO.Get_Line (Input));
+         Ada.Text_IO.Close (Input);
+         if Reinspection_Mode = 2 or else (Reinspection_Mode = 4 and then Phase = "stage:root-reinspected") then
+            Root.Mount_ID := Root.Mount_ID + 1;
+         elsif Reinspection_Mode = 3 then Original_Deadline := Original_Deadline + 1; end if;
+         Result := OK;
+      exception when others => if Ada.Text_IO.Is_Open (Input) then Ada.Text_IO.Close (Input); end if; Result := Denied;
+      end Physical_Observation;
+      procedure Reinspect is new Stage.Reinspect_Root_And_Hold (Physical_Observation);
+      procedure Physical_Checks (Socket_Path : String; Worker : Digest) is
+         use type Pkg_Root_Preparation.Root_Identity;
+         C : Stage.Reinspected_Generation; Other : MC_Store.Store;
+         Other_Root : MC_FS.Root; Other_Lock : MC_FS.File; Result : Outcome; Until_Time, Now : Counter;
+         Saved : Pkg_Root_Preparation.Root_Identity;
+         procedure Reservations is
+         begin
+            MC_Store.Open (Store_Path, Other, Result); Expect (Result = Conflict, "reinspection handle retains CAS"); MC_Store.Close (Other);
+            MC_FS.Open_Root (State_Path, Other_Root, Result); Expect (Result = OK, "open reserved stage");
+            MC_FS.Open_Locked (Other_Root, "generation.lock", Other_Lock, Result, Create_If_Missing => False);
+            Expect (Result = Conflict, "reinspection handle retains stage reservation"); MC_FS.Close (Other_Lock); MC_FS.Close (Other_Root);
+            MC_FS.Open_Root (State_Path, Other_Root, Result); Expect (Result = OK, "open root reservation directory");
+            MC_FS.Open_Locked (Other_Root, "root.lock", Other_Lock, Result, Create_If_Missing => False);
+            Expect (Result = Conflict, "reinspection handle retains root reservation"); MC_FS.Close (Other_Lock); MC_FS.Close (Other_Root);
+         end Reservations;
+      begin
+         -- Parent VM freezes the real tree before exposing this fixture bridge.
+         loop
+            exit when Ada.Directories.Exists (Parent & "/frozen-root.txt");
+            MC_Clock.Boottime_Milliseconds (Now, Status); Need ("wait for private freeze");
+            Expect (Now < Deadline, "private freeze wait bounded"); delay 0.01;
+         end loop;
+         for Mode in 1 .. 5 loop
+            Reinspection_Mode := Mode;
+            Reinspect (Root_Path, State_Path, Store_Path, Socket_Path, Expected, Worker, C, Deadline, Status);
+            Expect (Status = (if Mode = 1 then Denied else Indeterminate), "reinspection boundary refusal" & Natural'Image (Mode));
+            Expect (not Stage.Held (C) and then Stage.Root_Observation (C) = Pkg_Root_Preparation.Root_Identity'(others => <>), "failure exposes no root observation");
+            MC_Store.Open (Store_Path, Other, Status); Need ("failure releases native CAS reservation mode" & Natural'Image (Mode)); MC_Store.Close (Other);
+            Ada.Text_IO.Put_Line ("PASS native reinspection refusal mode" & Natural'Image (Mode));
+         end loop;
+         Reinspection_Mode := 0; MC_Clock.Boottime_Milliseconds (Now, Status); Need ("reinspection deadline"); Until_Time := Now + 3_000;
+         Reinspect (Root_Path, State_Path, Store_Path, Socket_Path, Expected, Worker, C, Until_Time, Status); Need ("native physical observation and retained reservations");
+         Expect (Stage.Held (C), "live reinspected root handle"); Saved := Stage.Root_Observation (C);
+         Expect (Saved.Mount_ID /= 0 and then Saved.Inode /= 0, "actual frozen root identity"); Reservations;
+         Reinspect (Root_Path, State_Path, Store_Path, Socket_Path, Expected, Worker, C, Deadline, Status);
+         Expect (Status = Conflict and then Stage.Root_Observation (C) = Saved, "busy handle cannot silently release or replace observations");
+         loop
+            MC_Clock.Boottime_Milliseconds (Now, Status); Need ("bounded expiry clock"); exit when Now >= Until_Time; delay 0.05;
+         end loop;
+         Expect (not Stage.Held (C) and then Stage.Root_Observation (C) = Pkg_Root_Preparation.Root_Identity'(others => <>), "expired handle exposes no observation"); Reservations;
+         Stage.Close (C); Stage.Close (C);
+         MC_Store.Open (Store_Path, Other, Status); Need ("explicit Close releases CAS"); MC_Store.Close (Other);
+         Stage.Inspect (Root_Path, State_Path, Store_Path, Expected, Deadline, Status); Need ("explicit Close releases stage and root");
+         Ada.Text_IO.Put_Line ("PASS native reinspection binding, post-gates, retained reservations and expiry");
+      exception when others => Stage.Close (C); MC_Store.Close (Other); MC_FS.Close (Other_Lock); MC_FS.Close (Other_Root); raise;
+      end Physical_Checks;
       function Object_Path (Hash : Digest) return String is
          Hex : constant String := MC_Hex.Encode (Hash);
       begin return "objects/" & Hex (1 .. 2) & "/" & Hex (3 .. 64); end Object_Path;
@@ -261,6 +331,9 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
             if Deny_Post then Expect (Status = Indeterminate, "post-extraction denial remains uncertain");
             else Need ("actual service extraction through stage admission"); end if;
             Expect (Prepare_Calls = 3 and then Post_Calls = 1, "pre and post admission ran under reservations");
+            if Ada.Command_Line.Argument_Count >= 5 + Shift and then Ada.Command_Line.Argument (5 + Shift) = "reinspect" then
+               Physical_Checks (Ada.Command_Line.Argument (3 + Shift), Worker);
+            end if;
          end;
       end if;
       MC_FS.Open_Root (Root_Path, Stage_Root, Status, Private_Only => True); Need ("observe staged root");
