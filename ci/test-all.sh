@@ -158,6 +158,7 @@ else
   exit 1
 fi
 python3 "$PWD/tests/compare_root_archive.py" --media "$PWD/tests/fixtures/root-archive" --native "$D/root-archive-native.log" --cas "$D/run_root_archive_tests/store" --output "$D/root-archive-oracle.json"
+python3 "$PWD/tests/compare_root_order.py" --media "$PWD/tests/fixtures/root-archive/order" --native "$D/root-archive-native.log" --cas "$D/run_root_archive_tests/store" --output "$D/root-order-oracle"
 mkdir -p "$D/run_payload_ownership_tests"
 mkdir -p "$D/"run_payload_ownership_tests/store
 echo 'Running run_payload_ownership_tests'

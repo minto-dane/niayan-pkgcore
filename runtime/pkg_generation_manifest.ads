@@ -35,7 +35,7 @@ package Pkg_Generation_Manifest with SPARK_Mode => Off is
    procedure Check (S : MC_Store.Store; M : Manifest; Status : out Outcome);
    procedure Check_Retention (S : in out MC_Store.Store; M : Manifest;
                               Deadline : Counter; Status : out Outcome);
-   -- NIAGEN05 binds Root_Archive (NIAROOT1) in bytes 225..256 and retains all
+   -- NIAGEN05 binds Root_Archive (NIAROOT1/2) in bytes 225..256 and retains all
    -- v4 supply/intent checks. Its single three-entry batch stages catalog, tree,
    -- and tree/root.tar; the last regular file must be the exact assembled tar.
    -- This stages the archive, not its privileged extraction or boot activation.

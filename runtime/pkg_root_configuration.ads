@@ -35,7 +35,7 @@ package Pkg_Root_Configuration with SPARK_Mode => Off is
    procedure Read_Entry (Value : Layout; Position : Positive; Item : out Entry_Reference; Status : out Outcome);
    function Choice_Count (Value : Layout) return Natural;
    procedure Read_Choice (Value : Layout; Position : Positive; Item : out Choice_Binding; Status : out Outcome);
-   -- A complete path-ordered projection of a verified NIAROOT1 plus live
+   -- A complete path-ordered projection of a verified NIAROOT1/2 plus live
    -- configuration decisions. Each entry uses either its exact base claim or
    -- the full configuration effect. Deleted targets are absent, not empty files.
    -- Choice scopes must match, incoming originals must belong to the catalog,

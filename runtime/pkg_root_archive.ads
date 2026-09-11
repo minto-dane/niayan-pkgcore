@@ -28,7 +28,12 @@ package Pkg_Root_Archive with SPARK_Mode => Off is
    -- Local extension headers, names, clocks, flags, ACLs, xattrs and payload
    -- bytes are copied intact from independently reobserved original tar spans.
    -- No conversion to the narrower control-state file-plan attribute profile.
-   -- NIAROOT1 binds catalog, retention closure, payload fingerprint, root tar,
+   -- NIAROOT2 emits directories in canonical raw path order, root first and
+   -- parents before children. All other entries retain source order except
+   -- required hardlink dependencies. Legacy NIAROOT1 bytes remain verifiable;
+   -- Verify_Ownership additionally refuses legacy archives whose ordering is
+   -- unsuitable for physical staging. No implicit migration or publication.
+   -- The manifest binds catalog, retention closure, payload fingerprint, root tar,
    -- byte length and the complete ordered claim selection. Build/Verify confer
    -- no ownership override, effect, publication or boot permission. The selected
    -- claim decisions still require independent site/effect authorization.

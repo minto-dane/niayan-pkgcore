@@ -334,7 +334,7 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       if Status = OK then MC_FS.Read_At (Root_Wire, 0, Header, Used, Status); end if;
       if Status = OK and then Used /= Header'Length then Status := Corrupt; end if;
       if Status = OK then
-         -- Check_Content already verified the complete canonical NIAROOT1,
+         -- Check_Content already verified the complete canonical NIAROOT1/2,
          -- ownership and exact enclosing catalog/closure. Read the same object.
          Archive := Header (105 .. 136);
          Size := Counter (MC_Codec.U64 (Header, 137)); Entries := Counter (MC_Codec.U64 (Header, 145));

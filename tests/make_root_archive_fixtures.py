@@ -44,6 +44,26 @@ def fixtures(*, filesystem_profile=False):
             member('data.tar', archive(entries, fmt)))
 
 
+def order_fixtures():
+    # Each source intentionally lists nested directories before their parents.
+    # Every selected directory may independently come from either package.
+    for suffix in ('a', 'b'):
+        entries = [entry('./alpha/beta', kind=tarfile.DIRTYPE, mode=0o750, uid=42, gid=43),
+                   entry('./alias-' + suffix, kind=tarfile.LNKTYPE, link='./chain-' + suffix),
+                   entry('./alpha', kind=tarfile.DIRTYPE, mode=0o750, uid=42, gid=43),
+                   entry('./chain-' + suffix, kind=tarfile.LNKTYPE, link='./alpha/beta/file-' + suffix),
+                   entry('./', kind=tarfile.DIRTYPE, mode=0o755, uid=0, gid=0),
+                   entry('./alpha/beta/file-' + suffix, ('value-' + suffix).encode() + b'\x00\xff',
+                         mode=0o640, uid=42, gid=43, pax_headers={'mtime': '-0.000000001'}),
+                   entry('./sym-' + suffix, kind=tarfile.SYMTYPE, mode=0o777,
+                         link='alpha/beta/file-' + suffix)]
+        control = (f'Package: root-order-{suffix}\nVersion: 1\nArchitecture: all\n'
+                   'Maintainer: Fixture <fixture@example.invalid>\nDescription: directory order fixture\n').encode()
+        yield f'order/{suffix}.deb', (b'!<arch>\n' + member('debian-binary', b'2.0\n') +
+            member('control.tar', tar([('./control', control, tarfile.REGTYPE, '')])) +
+            member('data.tar', archive(entries, tarfile.PAX_FORMAT)))
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -51,6 +71,7 @@ if __name__ == '__main__':
     mode.add_argument('--check', action='store_true')
     args = parser.parse_args()
     values = dict(fixtures())
+    values.update(order_fixtures())
     values['manifest.json'] = (json.dumps([
         dict(filename=name, sha256=hashlib.sha256(raw).hexdigest(), size=len(raw))
         for name, raw in values.items()], indent=2) + '\n').encode()
@@ -58,6 +79,7 @@ if __name__ == '__main__':
         DEST.mkdir(parents=True, exist_ok=True)
     for name, raw in values.items():
         if args.write:
+            (DEST / name).parent.mkdir(parents=True, exist_ok=True)
             (DEST / name).write_bytes(raw)
         elif (DEST / name).read_bytes() != raw:
             raise SystemExit('fixture differs: ' + name)

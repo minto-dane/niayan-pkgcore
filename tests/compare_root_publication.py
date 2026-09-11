@@ -42,7 +42,7 @@ def check(root, state, cas, bank, media, native):
     assert manifest[8:24] == descriptor[24:40] and manifest[56:88] == descriptor[72:104]
     assert (cas / 'pins' / manifest[24:40].hex()).read_bytes() == descriptor[40:72]
     root_manifest = read(manifest[224:256])
-    assert root_manifest[:8] == b'NIAROOT1' and root_manifest[8:40] == manifest[56:88]
+    assert root_manifest[:8] == b'NIAROOT2' and root_manifest[8:40] == manifest[56:88]
     assert root_manifest[40:72] == manifest[128:160]
     archive = read(root_manifest[104:136])
     assert struct.unpack_from('>Q', root_manifest, 136)[0] == len(archive)

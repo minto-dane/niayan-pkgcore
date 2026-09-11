@@ -7,7 +7,8 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
    package X renames Pkg_Payload_Index; package P renames Pkg_Deb_Payload;
    package T renames Pkg_Tar_Framing;
    use type Interfaces.C.unsigned; use type Wide; use type MC_FS.Entry_Info; use type P.Entry_Kind;
-   Magic : constant Bytes := (78, 73, 65, 82, 79, 79, 84, 49);
+   Legacy_Magic : constant Bytes := (78, 73, 65, 82, 79, 79, 84, 49);
+   Magic : constant Bytes := (78, 73, 65, 82, 79, 79, 84, 50);
    type Buffer_Access is access Bytes;
    procedure Free is new Ada.Unchecked_Deallocation (Bytes, Buffer_Access);
    procedure Tick (Deadline : Counter; Status : out Outcome) is
@@ -21,7 +22,8 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
      (Size + (if Size mod 512 = 0 then 0 else 512 - Size mod 512));
    procedure Assemble (Store : in out MC_Store.Store; Catalog, Closure : Digest;
       Chosen : Selection; Native_Architecture : String; Limit, Deadline : Counter;
-      Manifest, Archive, Ownership_Binding : out Digest; Status : out Outcome) is
+      Manifest, Archive, Ownership_Binding : out Digest; Status : out Outcome;
+      Legacy_Order : Boolean := False) is
       type Part is record
          Claim, Source_Number, Ordinal, Dependency : Natural := 0;
          First, Length : Counter := 0;
@@ -197,9 +199,18 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
          end;
       end loop;
       Close_Source;
-      for Position of By_Source loop
-         if Parts (Position).Directory then Order.Append (Position); Parts (Position).Done := True; end if;
-      end loop;
+      if Legacy_Order then
+         -- Retained v1 bytes remain verifiable as historical records.
+         for Position of By_Source loop
+            if Parts (Position).Directory then Order.Append (Position); Parts (Position).Done := True; end if;
+         end loop;
+      else
+         -- Canonical raw path order puts the empty root before all children,
+         -- independent of selected owners and source archive ordering.
+         for Position in Parts'Range loop
+            if Parts (Position).Directory then Order.Append (Position); Parts (Position).Done := True; end if;
+         end loop;
+      end if;
       for Position of By_Source loop
          declare Next : Natural := Position; begin
             while Next /= 0 and then not Parts (Next).Done loop
@@ -214,6 +225,25 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
          end;
       end loop;
       if Natural (Order.Length) /= Chosen'Length then Status := Corrupt; Check; end if;
+      if not Legacy_Order or else Native_Architecture /= "" then
+         -- Historical v1 readback is distinct from physical staging admission.
+         for I in Parts'Range loop Parts (I).Done := False; end loop;
+         if Order.First_Element /= 1 then Status := Unsupported; Check; end if;
+         for Position of Order loop
+            Clock;
+            declare Name : constant String := Path_At (Position); Parent : Natural; begin
+               for I in Name'Range loop
+                  if Name (I) = '/' then
+                     Parent := Selected (Name (Name'First .. I - 1));
+                     if Parent = 0 or else not Parts (Parent).Directory or else not Parts (Parent).Done then
+                        Status := Unsupported; Check;
+                     end if;
+                  end if;
+               end loop;
+            end;
+            Parts (Position).Done := True;
+         end loop;
+      end if;
       for Position of Order loop Emit (Position); end loop;
       Close_Source;
       MC_SHA256.Update (Hash, Bytes'(1 .. 1_024 => 0)); Expected := MC_SHA256.Finish (Hash); Clock;
@@ -223,7 +253,8 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
       MC_Store.Write_Chunk (Writer, Bytes'(1 .. 1_024 => 0), Status); Check;
       MC_Store.Finish_Write (Store, Writer, Status); Check; Clock; Root_Hash := Expected;
       Wire := new Bytes (1 .. Header_Size + 8 * Chosen'Length);
-      Wire (1 .. 8) := Magic; Wire (9 .. 40) := Catalog; Wire (41 .. 72) := Closure;
+      Wire (1 .. 8) := (if Legacy_Order then Legacy_Magic else Magic);
+      Wire (9 .. 40) := Catalog; Wire (41 .. 72) := Closure;
       Wire (73 .. 104) := X.Fingerprint (Payload); Wire (105 .. 136) := Root_Hash;
       MC_Codec.Put64 (Wire.all, 137, Wide (Total)); MC_Codec.Put64 (Wire.all, 145, Wide (Chosen'Length));
       for I in Parts'Range loop MC_Codec.Put64 (Wire.all, Header_Size + 8 * (I - 1) + 1, Wide (Parts (I).Claim)); end loop;
@@ -255,7 +286,7 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
       Wire := new Bytes (1 .. Max_Manifest_Bytes);
       MC_Store.Read_Object (Store, Manifest, Wire.all, Used, Status); Check; Status := Corrupt;
       if Used < Header_Size then raise Interrupted; end if;
-      if Wire (1 .. 8) /= Magic then Status := Unsupported; Check; end if;
+      if Wire (1 .. 8) /= Magic and then Wire (1 .. 8) /= Legacy_Magic then Status := Unsupported; Check; end if;
       if MC_Codec.U64 (Wire.all, 145) not in 1 .. Wide (Max_Entries) then raise Interrupted; end if;
       Count := Natural (MC_Codec.U64 (Wire.all, 145));
       if Used /= Header_Size + 8 * Count or else MC_Codec.U64 (Wire.all, 137) not in 1_024 .. Wide (Limit)
@@ -279,7 +310,8 @@ package body Pkg_Root_Archive with SPARK_Mode => Off is
             end if;
             Chosen (I) := Positive (MC_Codec.U64 (Wire.all, Header_Size + 8 * (I - 1) + 1));
          end loop;
-         Assemble (Store, Wire (9 .. 40), Wire (41 .. 72), Chosen, Native_Architecture, Limit, Deadline, Expected, Actual, Owned, Status); Check;
+         Assemble (Store, Wire (9 .. 40), Wire (41 .. 72), Chosen, Native_Architecture, Limit, Deadline,
+            Expected, Actual, Owned, Status, Legacy_Order => Wire (1 .. 8) = Legacy_Magic); Check;
       end;
       if Expected /= Manifest or else Actual /= Wire (105 .. 136) then Status := Corrupt; Check; end if;
       Tick (Deadline, Status); Check; Archive := Actual; Ownership_Binding := Owned; Cleanup;

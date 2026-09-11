@@ -79,7 +79,7 @@ def main():
         name.encode() for name in expected)
     wire = object_bytes(manifest_id)
     output = object_bytes(archive_id)
-    assert wire[:8] == b'NIAROOT1' and wire[104:136].hex() == archive_id
+    assert wire[:8] == b'NIAROOT2' and wire[104:136].hex() == archive_id
     assert struct.unpack('>QQ', wire[136:152]) == (len(output), len(picked))
     assert len(wire) == 152 + 8 * len(picked)
     for index, pick in zip(struct.unpack('>' + 'Q' * len(picked), wire[152:]), picked, strict=True):
@@ -90,6 +90,10 @@ def main():
     for item, span in assembled:
         name = path(item)
         assert name not in seen and name in expected
+        assert seen or name == '', 'root must be the first entry'
+        components = name.split('/')
+        for length in range(1, len(components)):
+            assert '/'.join(components[:length]) in seen, 'parent must precede child'
         source, ordinal = expected[name]
         original, raw_span = originals[source][ordinal - 1]
         assert span == raw_span, name  # Includes local extension headers and data padding.
@@ -110,6 +114,7 @@ def main():
                   original_debs=len(originals), selected_paths=len(picked),
                   archive_bytes=len(output), entry_types=kinds,
                   exact_original_spans=True, hardlink_targets_precede_links=True,
+                  root_first=True, parents_precede_children=True,
                   physical_extraction=False, production_authorization=False)
     generations = [line.split()[1] for line in lines if line.startswith('GENERATION_MANIFEST ')]
     if generations:

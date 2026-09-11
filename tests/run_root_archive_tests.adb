@@ -5,7 +5,7 @@ with MC_Clock; with MC_Codec; with MC_FS; with MC_Hex; with MC_Posix; with MC_Ru
 with MC_Types; use MC_Types;
 with Pkg_Catalog_Retention; with Pkg_Catalog_Store; with Pkg_Deb_Metadata;
 with Pkg_Deb_Payload; with Pkg_Payload_Index; with Pkg_Root_Archive;
-with Root_Archive_Stage_Test; with Pkg_Selected_Catalog; with Test_Support; use Test_Support;
+with Root_Archive_Stage_Test; with Root_Archive_Order_Test; with Pkg_Selected_Catalog; with Test_Support; use Test_Support;
 procedure Run_Root_Archive_Tests with SPARK_Mode => Off is
    package A renames Pkg_Root_Archive; package C renames Pkg_Selected_Catalog;
    package X renames Pkg_Payload_Index; package P renames Pkg_Deb_Payload;
@@ -140,10 +140,18 @@ begin
       Refuse ("infinite deadline", Chosen, Until_Time => Counter'Last);
       A.Verify (Store, Manifest, Limit, 0, Again, Status); Expect (Status = Stale and then Again = Zero_Digest, "expired verify");
       MC_Store.Read_Object (Store, Manifest, Wire, Used, Status); Need ("read manifest");
+      Expect (Wire (8) = Character'Pos ('2'), "new builds use ordered v2 manifest");
+      Modified := Wire; Modified (8) := Character'Pos ('1');
+      MC_Store.Put (Store, Modified (1 .. Used), Again, Status); Need ("retain safe legacy v1 fixture");
+      A.Verify (Store, Again, Limit, Deadline, Other, Status); Need ("legacy exact-byte verification");
+      Expect (Other = Archive, "safe legacy archive unchanged");
+      A.Verify_Ownership (Store, Again, Catalog, Closure, "amd64", Limit, Deadline, Other, Ownership, Status);
+      Need ("safe legacy physical ordering accepted");
+      Expect (Other = Archive and then Ownership /= Zero_Digest, "legacy ownership binding retained");
       Reject_Wire (Wire (1 .. 0), "empty manifest");
       Reject_Wire (Wire (1 .. Used - 1), "truncated manifest");
       Reject_Wire (Wire, "trailing manifest byte");
-      Modified := Wire; Modified (8) := Character'Pos ('2'); Reject_Wire (Modified (1 .. Used), "unknown format");
+      Modified := Wire; Modified (8) := Character'Pos ('9'); Reject_Wire (Modified (1 .. Used), "unknown format");
       Modified := Wire; Modified (73) := Modified (73) xor 1; Reject_Wire (Modified (1 .. Used), "payload fingerprint binding");
       Modified := Wire; MC_Codec.Put64 (Modified, 137, 1_024); Reject_Wire (Modified (1 .. Used), "archive length binding");
       Modified := Wire; MC_Codec.Put64 (Modified, 145, 0); Reject_Wire (Modified (1 .. Used), "empty selection");
@@ -160,6 +168,7 @@ begin
       Expect (Again = Archive, "restored archive unchanged");
    end;
    Root_Archive_Stage_Test.Run (Store, Ada.Command_Line.Argument (1), Catalog, Closure, Manifest, Archive, Packages, Deadline);
+   Root_Archive_Order_Test.Run (Store, Media, Deadline);
    MC_Store.Close (Store); MC_FS.Close (CAS_Root); MC_FS.Close (Media); Report;
 exception when others => MC_Store.Close (Store); MC_FS.Close (CAS_Root); MC_FS.Close (Media); raise;
 end Run_Root_Archive_Tests;

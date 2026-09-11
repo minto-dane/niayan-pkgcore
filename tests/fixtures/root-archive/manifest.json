@@ -13,5 +13,15 @@
     "filename": "conflicting.deb",
     "sha256": "b2af62acfb65256e95e2555c3046596aedf6974fa746f8f425c14b6ea35867ca",
     "size": 20672
+  },
+  {
+    "filename": "order/a.deb",
+    "sha256": "ede9d3a3370439a9b8ea853224ed2711da68b0509161701022970ecc23714b98",
+    "size": 20672
+  },
+  {
+    "filename": "order/b.deb",
+    "sha256": "d52d5158f7580fb1516796a5c899dd56866c097e17dc8b9f63754897b3ba66e8",
+    "size": 20672
   }
 ]
