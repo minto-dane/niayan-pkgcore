@@ -3,6 +3,7 @@ with Ada.Command_Line; with Interfaces; with Interfaces.C;
 with MC_Types; use MC_Types;
 with MC_Runtime; with MC_Clock; with MC_Store; with MC_Posix; with MC_FS; with MC_Hex;
 with Pkg_Conffile_Snapshot; with Pkg_Conffile_Observation; with Pkg_Conffile_Transition; with Pkg_Deb_Payload;
+with Configuration_Entry_Test; with Pkg_Configuration_Entry; with Pkg_Conffile_Choice;
 with Test_Support; use Test_Support;
 procedure Run_Conffile_Observation_Tests with SPARK_Mode => Off is
    package O renames Pkg_Conffile_Observation; package S renames Pkg_Conffile_Snapshot;
@@ -38,7 +39,7 @@ procedure Run_Conffile_Observation_Tests with SPARK_Mode => Off is
    -- One root directory precedes the regular file in this actual observation.
    File_Start : constant Positive := 8 + 8 + Path'Length + 16 + 64 + 1;
 begin
-   Expect (Ada.Command_Line.Argument_Count = 2, "private CAS and root");
+   Expect (Ada.Command_Line.Argument_Count = 3, "private CAS, root and vendor media");
    MC_Runtime.Initialize (Status); Need ("runtime"); MC_Clock.Boottime_Milliseconds (Deadline, Status); Need ("clock"); Deadline := Deadline + 120_000;
    MC_Store.Initialize (Ada.Command_Line.Argument (1), Store, Status); Need ("CAS");
    declare N : aliased constant String := Ada.Command_Line.Argument (2) & ASCII.NUL; begin
@@ -85,6 +86,7 @@ begin
    O.Read_Xattr (Observed, 1, Name, Value (1 .. 1), Read, Status);
    Expect (Status = Exhausted and then Read = 0 and then P.Byte_Strings.Length (Name) = 0, "short output is not partial data");
    O.Load (Store, Original, "/other", Deadline, Observed, Status); Expect (Status = Conflict and then O.Address (Observed) = Zero_Digest, "wrong path refused");
+   Configuration_Entry_Test.Run (Store, Integer (Root), Original, Path, Ada.Command_Line.Argument (3), Deadline);
    MC_Store.Read_Object (Store, Original, Wire, Used, Status); Need ("raw observation");
    Altered := Wire; Reject ("truncated header", 7);
    Altered := Wire; Reject ("truncated content address", Used - 1);
@@ -109,6 +111,39 @@ begin
       O.Load (Store, Changed, Path, Deadline, Observed, Status); Need ("full-width fields decoded");
       Expect (O.Attributes (Observed).Attributes = 2 ** 63 and then O.Attributes (Observed).Inode_Flags = 2 ** 63
          and then O.Attributes (Observed).Modified.Seconds = Interfaces.Integer_64'First, "no flag or signed-time narrowing");
+   end;
+   declare Effect : Pkg_Conffile_Choice.File_Effect;
+      Prefix : Digest; Size : Counter;
+   begin
+      Effect := (P.Byte_Strings.To_Bounded_String (Path), P.Byte_Strings.To_Bounded_String (Path), Saved_Content,
+         Pkg_Conffile_Choice.Local_Observation, Changed, Zero_Digest, 8#640#, Word (MC_Posix.Euid), Word (MC_Posix.Egid));
+      Pkg_Configuration_Entry.Prepare (Store, Effect, Deadline, Prefix, Size, Status);
+      Expect (Status = Unsupported and then Prefix = Zero_Digest and then Size = 0, "unknown active attributes not omitted");
+      declare ACL_Start : Natural := 0;
+         procedure Bad_ACL (Label_Text : String; Expected : Outcome) is
+         begin
+            MC_Store.Put (Store, Altered (1 .. Used), Effect.Object, Status); Need ("isolated ACL observation");
+            Pkg_Configuration_Entry.Prepare (Store, Effect, Deadline, Prefix, Size, Status);
+            Expect (Status = Expected and then Prefix = Zero_Digest and then Size = 0, Label_Text & Outcome'Image (Status));
+         end Bad_ACL;
+      begin
+         for I in 1 .. Used - ACL'Length + 1 loop
+            if Wire (I .. I + ACL'Length - 1) = ACL then ACL_Start := I; exit; end if;
+         end loop;
+         Expect (ACL_Start /= 0, "raw ACL fixture position");
+         Altered := Wire; Put_LE (Altered, ACL_Start + 16, 2 ** 31, 4);
+         Bad_ACL ("ACL identity cannot saturate to a different user", Unsupported);
+         Altered := Wire; Put_LE (Altered, ACL_Start + 6, 8, 2);
+         Bad_ACL ("invalid ACL permissions refused", Corrupt);
+         Altered := Wire; Put_LE (Altered, ACL_Start + 6, 7, 2);
+         Bad_ACL ("ACL mode assertion required", Corrupt);
+         Altered := Wire; Altered (ACL_Start + 12 .. ACL_Start + 19) := ACL (5 .. 12);
+         Bad_ACL ("duplicate ACL owner refused", Corrupt);
+      end;
+      Altered := Wire; Put_LE (Altered, File_Start + 64, 2);
+      MC_Store.Put (Store, Altered (1 .. Used), Effect.Object, Status); Need ("retained multiple-link observation");
+      Pkg_Configuration_Entry.Prepare (Store, Effect, Deadline, Prefix, Size, Status);
+      Expect (Status = Unsupported and then Prefix = Zero_Digest and then Size = 0, "unresolved local hardlink topology refused");
    end;
    O.Load (Store, Original, Path, 0, Observed, Status);
    Expect (Status = Stale and then O.Address (Observed) = Zero_Digest, "deadline refused");

@@ -102,6 +102,15 @@ begin
    O.Start (Value, "/absolute", 0, 0, 0, 0, Clocks, Status); Expect (Status = Invalid_Input, "absolute archive path refused");
    O.Start (Value, "etc//bad", 0, 0, 0, 0, Clocks, Status); Expect (Status = Invalid_Input, "empty path component refused");
    O.Start (Value, "etc/./bad", 0, 0, 0, 0, Clocks, Status); Expect (Status = Invalid_Input, "dot path component refused");
+   O.Start (Value, String'(1 .. 255 => 'a') & "/" & String'(1 .. 255 => 'b'), 0, 0, 0, 0, Clocks, Status);
+   Need ("maximum filesystem components accepted");
+   O.Start (Value, String'(1 .. 256 => 'a') & "/b", 0, 0, 0, 0, Clocks, Status);
+   Expect (Status = Invalid_Input, "oversized parent component refused");
+   O.Start (Value, "a/" & String'(1 .. 256 => 'b'), 0, 0, 0, 0, Clocks, Status);
+   Expect (Status = Invalid_Input, "oversized final component refused");
+   declare Offset_Path : constant String (11 .. 265) := (others => 'c'); begin
+      O.Start (Value, Offset_Path, 0, 0, 0, 0, Clocks, Status); Need ("nonunit string origin accepted");
+   end;
    O.Start (Value, Name, 8#100644#, 0, 0, 0, Clocks, Status); Expect (Status = Invalid_Input, "kind bits not accepted as permissions");
    Clocks (1).Present := False; O.Start (Value, Name, 0, 0, 0, 0, Clocks, Status);
    Expect (Status = Invalid_Input, "missing mtime is not invented");

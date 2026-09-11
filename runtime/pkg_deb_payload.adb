@@ -190,6 +190,7 @@ package body Pkg_Deb_Payload with SPARK_Mode => Off is
          Blob : Bytes (1 .. MC_FS.Max_Xattr_Bytes); P, Used : Natural;
          Count, Got : int; Name : aliased chars_ptr; Address : aliased System.Address; Size : aliased size_t;
          ACL_Type, Permset, Tag, Qualifier : aliased int;
+         Access_Mask : Boolean := False;
       begin
          Count := Xattr_Reset (E);
          if Count < 0 or else Count > List'Length then Status := Exhausted; return; end if;
@@ -222,6 +223,14 @@ package body Pkg_Deb_Payload with SPARK_Mode => Off is
          for I in 1 .. Natural (Count) loop
             Got := ACL_Next (E, 16#3F00#, ACL_Type'Access, Permset'Access, Tag'Access, Qualifier'Access, Name'Access);
             if Got /= 0 then Status := Corrupt; return; end if;
+            if ACL_Type = 16#100# and then Tag = 10005 then
+               if Access_Mask or else Permset not in 0 .. 7 then Status := Corrupt; return; end if;
+               Access_Mask := True;
+               -- The archive entry's group bits represent ACL_GROUP_OBJ. The
+               -- inode's group class represents ACL_MASK when an access mask
+               -- exists. Keep the original group entry in the ACL blob.
+               Item.Values.Mode := (Item.Values.Mode and not Word'(8#70#)) or Word (Permset) * 8;
+            end if;
             declare Text : Unbounded_String; begin
                Bounded (Name, Text, Status); if Status /= OK then return; end if; Used := Length (Text);
                if Used + 18 > Blob'Length - P then Status := Exhausted; return; end if;

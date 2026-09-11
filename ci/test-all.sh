@@ -190,7 +190,13 @@ mkdir -p "$D/run_conffile_observation_tests"
 mkdir -p "$D/"run_conffile_observation_tests/store
 mkdir -p "$D/"run_conffile_observation_tests/root
 echo 'Running run_conffile_observation_tests'
-timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_conffile_observation_tests" "$D/"run_conffile_observation_tests/store "$D/"run_conffile_observation_tests/root
+if timeout --kill-after=5s 600s env -i PATH="$PATH" HOME="$D" TMPDIR="$D" LANG=C.UTF-8 LC_ALL=C.UTF-8 "$PWD/build/test-bin/run_conffile_observation_tests" "$D/"run_conffile_observation_tests/store "$D/"run_conffile_observation_tests/root "$PWD/"tests/fixtures/root-archive > "$D/configuration-entry-native.log" 2>&1; then
+  cat "$D/configuration-entry-native.log"
+else
+  cat "$D/configuration-entry-native.log"
+  exit 1
+fi
+python3 "$PWD/tests/check_configuration_entry.py" --native "$D/configuration-entry-native.log" --cas "$D/run_conffile_observation_tests/store" --output "$D/configuration-entry-oracle" --driver "$PWD/build/test-bin/run_deb_payload_tests"
 mkdir -p "$D/run_root_configuration_tests"
 mkdir -p "$D/"run_root_configuration_tests/store
 mkdir -p "$D/"run_root_configuration_tests/root

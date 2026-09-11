@@ -63,11 +63,11 @@ package body Pkg_Tar_Output with SPARK_Mode => Off is
       for I in Path'Range loop
          if Path (I) = ASCII.NUL then return; end if;
          if Path (I) = '/' then
-            if I = First or else Path (First .. I - 1) in "." | ".." then return; end if;
+            if I = First or else I - First > 255 or else Path (First .. I - 1) in "." | ".." then return; end if;
             First := I + 1;
          end if;
       end loop;
-      if Path (First .. Path'Last) in "." | ".." then return; end if;
+      if Path'Last - First + 1 > 255 or else Path (First .. Path'Last) in "." | ".." then return; end if;
       Value.State := new Data; Value.State.Mode := Mode;
       Add ("hdrcharset", "BINARY"); Add ("path", Path); Add ("size", Decimal (Size));
       Add ("uid", Decimal (Counter (UID))); Add ("gid", Decimal (Counter (GID)));
