@@ -7,7 +7,7 @@ with Pkg_Conffile_Choice; with Pkg_Conffile_Transition; with Pkg_Root_Configurat
 with Pkg_Root_Archive; with Pkg_Catalog_Store; with Pkg_Catalog_Retention;
 with Pkg_Selected_Catalog; with Pkg_Deb_Metadata; with Pkg_Deb_Payload; with Pkg_Payload_Index;
 with Test_Support; use Test_Support;
-with Configured_Root_Record_Test;
+with Configured_Root_Record_Test; with Root_Archive_Stage_Test;
 procedure Run_Root_Configuration_Tests with SPARK_Mode => Off is
    package C renames Pkg_Conffile_Choice; package T renames Pkg_Conffile_Transition;
    package R renames Pkg_Root_Configuration; package A renames Pkg_Root_Archive;
@@ -21,6 +21,7 @@ procedure Run_Root_Configuration_Tests with SPARK_Mode => Off is
    Layout : R.Layout; Item : R.Entry_Reference; Retained : R.Choice_Binding;
    Selected : R.Choices (1 .. 1); Scope : C.Scope;
    Prior, Incoming, Catalog, Closure, Manifest, Archive, Decision, Kept : Digest;
+   Packages : S.Selection (1 .. 1);
    Context : constant Digest := (others => 3);
    Path : constant String := "/etc/fixture.conf"; Backup : constant String := "/etc/fixture.conf.save";
    Limit : constant Counter := 1_048_576;
@@ -33,7 +34,6 @@ procedure Run_Root_Configuration_Tests with SPARK_Mode => Off is
    end Load;
    procedure Base (Name : String) is
       Candidate : S.Catalog; Payload : X.Index; Source : P.Inventory;
-      Packages : S.Selection (1 .. 1);
       type Observation_Access is access Pkg_Deb_Metadata.Observation;
       procedure Free is new Ada.Unchecked_Deallocation (Pkg_Deb_Metadata.Observation, Observation_Access);
       Observed : Observation_Access := new Pkg_Deb_Metadata.Observation;
@@ -128,7 +128,7 @@ begin
       or else (Ada.Command_Line.Argument_Count = 6 and then Ada.Command_Line.Argument (2) = "--current") then
       Configured_Root_Record_Test.Run; return;
    end if;
-   Expect (Ada.Command_Line.Argument_Count = 3, "store root and media");
+   Expect (Ada.Command_Line.Argument_Count in 3 | 5 | 6, "store root media and optional physical service");
    Proposal := new C.Proposal;
    MC_Runtime.Initialize (Status); Need ("runtime"); MC_Clock.Boottime_Milliseconds (Deadline, Status); Need ("clock"); Deadline := Deadline + 600_000;
    MC_Store.Initialize (Ada.Command_Line.Argument (1), Store, Status); Need ("CAS");
@@ -207,6 +207,8 @@ begin
       Expect (FD >= 0, "empty regular local configuration"); Ignored := MC_Posix.Close (FD);
    end;
    Choose; Serialize ("empty");
+   Root_Archive_Stage_Test.Run (Store, Ada.Command_Line.Argument (1), Catalog, Closure, Manifest, Archive,
+      Packages, Deadline, Integer (Root), Prior, Incoming);
    R.Clear (Layout); Free (Proposal); Ignored := MC_Posix.Close (Root); Root := -1;
    MC_FS.Close (Media); MC_Store.Close (Store); Report;
 exception when others => R.Clear (Layout); Free (Proposal); Ignored := MC_Posix.Close (Root); MC_FS.Close (File); MC_FS.Close (Media); MC_Store.Close (Store); raise;

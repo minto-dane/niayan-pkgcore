@@ -195,14 +195,21 @@ package body Pkg_Generation_Intent with SPARK_Mode => Off is
       Free (Enabled);
    exception when others => Free (Enabled); Status := Indeterminate;
    end Check_Target;
-   procedure Read_Native_Architecture (Store : MC_Store.Store; Address, Catalog, Closure : Digest;
-      Deadline : Counter; Native_Architecture : out MC_Text.Value; Status : out Outcome) is
+   procedure Read_Target_Scope (Store : MC_Store.Store; Address, Catalog, Closure : Digest;
+      Deadline : Counter; Root_ID : out Identity; Native_Architecture : out MC_Text.Value; Status : out Outcome) is
       Value : Data; Enabled : List_Access;
    begin
-      Native_Architecture := MC_Text.Empty; Read (Store, Address, Deadline, Value, Enabled, Status);
+      Root_ID := Zero_Identity; Native_Architecture := MC_Text.Empty;
+      Read (Store, Address, Deadline, Value, Enabled, Status);
       if Status = OK and then (Value.Catalog /= Catalog or else Value.Closure /= Closure) then Status := Conflict; end if;
-      if Status = OK then Native_Architecture := Value.Native; end if; Free (Enabled);
-   exception when others => Free (Enabled); Native_Architecture := MC_Text.Empty; Status := Indeterminate;
+      if Status = OK then Root_ID := Value.Root_ID; Native_Architecture := Value.Native; end if; Free (Enabled);
+   exception when others => Free (Enabled); Root_ID := Zero_Identity; Native_Architecture := MC_Text.Empty; Status := Indeterminate;
+   end Read_Target_Scope;
+   procedure Read_Native_Architecture (Store : MC_Store.Store; Address, Catalog, Closure : Digest;
+      Deadline : Counter; Native_Architecture : out MC_Text.Value; Status : out Outcome) is
+      Root_ID : Identity;
+   begin
+      Read_Target_Scope (Store, Address, Catalog, Closure, Deadline, Root_ID, Native_Architecture, Status);
    end Read_Native_Architecture;
    procedure Verify (Store : in out MC_Store.Store; Address : Digest; Root_ID : Identity;
       Before : GD.Descriptor; Before_Closure, Catalog, Closure : Digest;

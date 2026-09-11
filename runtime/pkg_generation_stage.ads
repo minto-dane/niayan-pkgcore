@@ -1,10 +1,13 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
-with MC_FS;
+with MC_FS; with Pkg_Generation_Configuration;
 generic
    with procedure Authorize
      (Manifest, Plan, Evidence : Digest; Stage_ID, Transaction_ID : Identity;
       Epoch, Fence : Counter; Phase : String; Status : out Outcome);
+   with procedure Observe_Configuration (Generation : Digest; Root_ID, Transaction_ID : Identity;
+      Context : Digest; Phase : String; Root_FD : out Integer; Status : out Outcome)
+      is Pkg_Generation_Configuration.Unavailable;
 package Pkg_Generation_Stage with SPARK_Mode => Off is
    type Verified_Generation is limited private;
    procedure Verify_And_Hold
@@ -25,13 +28,21 @@ package Pkg_Generation_Stage with SPARK_Mode => Off is
    procedure Prepare_Root
      (Root_Path, State_Path, Store_Path, Socket_Path : String;
       Expected_Manifest, Expected_Worker : Digest; Deadline : Counter; Status : out Outcome);
-   -- v5 only. Hold stage/root/CAS reservations through the actual FD request and
+   -- v5/v6. Hold stage/root/CAS reservations through the actual FD request and
    -- final content/admission rechecks. prepare-root/root-prepared authorization
    -- phases are mandatory; a service response alone never grants publication.
    -- Failure after delivery is uncertain: no implicit retry or tree reuse.
    procedure Inspect
      (Root_Path, State_Path, Store_Path : String; Expected_Manifest : Digest; Deadline : Counter;
       Status : out Outcome);
+   -- v6 requires an independently authenticated, borrowed configuration source
+   -- root via Observe_Configuration; its default refuses all v6 operations.
+   -- The provider retains source exclusion through each whole operation. Saved
+   -- choices are freshly verified after every CAS reacquisition, including the
+   -- inner batch engine's Check_Inputs before prepare/resume. Physical request
+   -- and response boundaries recheck them too. This is inactive staging only;
+   -- source changes or mount identity migration require a new admitted selection.
+   -- Accepted publication recovery cannot reuse this before-state check.
    -- Every operation requires a finite boottime deadline. v2 checks the pinned
    -- catalog closure under the store reservation; v1 remains structural staging.
    -- Clock checks also surround mandatory authorization and private batch gates.

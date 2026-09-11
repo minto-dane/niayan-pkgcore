@@ -8,16 +8,18 @@ package Pkg_Generation_Manifest with SPARK_Mode => Off is
    Intent_Header_Size : constant := 192;
    Supply_Header_Size : constant := 224;
    Root_Header_Size : constant := 256;
-   Max_Bytes : constant := Root_Header_Size + 64 * Max_Batches;
+   Configured_Header_Size : constant := 320;
+   Max_Bytes : constant := Configured_Header_Size + 64 * Max_Batches;
    type Batch is record
       Plan, Receipt : Digest := Zero_Digest;
    end record;
    type Batch_Array is array (Positive range 1 .. Max_Batches) of Batch;
-   type Format_Kind is (Structural_V1, Native_V2, Intent_V3, Supply_V4, Root_V5);
+   type Format_Kind is (Structural_V1, Native_V2, Intent_V3, Supply_V4, Root_V5, Configured_V6);
    type Manifest is record
       Format : Format_Kind := Structural_V1;
       Catalog_Closure : Digest := Zero_Digest;
       Intent, Supply_Policy, Root_Archive : Digest := Zero_Digest;
+      Configured_Root, Configuration_Closure : Digest := Zero_Digest;
       Stage_ID, Transaction_ID : Identity := Zero_Identity;
       Epoch, Fence : Counter := 0;
       Catalog, Effect_Contract : Digest := Zero_Digest;
@@ -35,6 +37,16 @@ package Pkg_Generation_Manifest with SPARK_Mode => Off is
    procedure Check (S : MC_Store.Store; M : Manifest; Status : out Outcome);
    procedure Check_Retention (S : in out MC_Store.Store; M : Manifest;
                               Deadline : Counter; Status : out Outcome);
+   -- NIAGEN06 retains the v5 base Root_Archive and adds Configured_Root
+   -- (NIACRT01) in bytes 257..288 and Configuration_Closure (NIACRC01) in
+   -- bytes 289..320. The saved root must bind the intent's root/architecture,
+   -- this generation's Transaction_ID, and Context=Intent. Its base manifest,
+   -- catalog and closure must match the enclosing generation. The staged tar
+   -- is the configured output. Check_Retention checks saved references and
+   -- original ownership, not current configuration or consent. Staging MUST
+   -- independently obtain the reserved source root and run Verify_Current.
+   -- Publication of v6 remains unsupported until accepted-state recovery can
+   -- distinguish source observations from applied configuration effects.
    -- NIAGEN05 binds Root_Archive (NIAROOT1/2) in bytes 225..256 and retains all
    -- v4 supply/intent checks. Its single three-entry batch stages catalog, tree,
    -- and tree/root.tar; the last regular file must be the exact assembled tar.
@@ -45,11 +57,11 @@ package Pkg_Generation_Manifest with SPARK_Mode => Off is
    -- the exact supply map and independent authority/time snapshot. Retention is
    -- structural only; the publisher separately enforces fresh/recorded admission.
    -- NIAGEN03 additionally binds Intent in bytes 161..192. NIAGEN01/02 retain
-   -- their exact 160-byte headers and transaction derivation. Only v3/v4/v5 have a
+   -- their exact 160-byte headers and transaction derivation. Only v3/v4/v5/v6 have a
    -- publication intent; legacy v1/v2 cannot acquire one via trailing bytes.
    -- NIAGEN02 binds Catalog_Closure in header bytes 129..160. NIAGEN01 keeps
    -- these bytes reserved/zero and retains its original transaction derivation.
-   -- Check remains the structural file-plan check. Check_Retention requires v2/v3/v4/v5,
+   -- Check remains the structural file-plan check. Check_Retention requires v2/v3/v4/v5/v6,
    -- a finite explicit deadline, and the exact native catalog closure, verified
    -- before any catalog reconstruction can hide a missing derived object.
    -- The existing manifest pin roots the nested closure; no second pin identity

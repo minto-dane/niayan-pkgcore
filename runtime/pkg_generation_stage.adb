@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Unchecked_Deallocation; with Interfaces.C; with System;
+with Pkg_Configured_Root_Record; with Pkg_Generation_Intent;
 with MC_Clock; with MC_Codec; with Pkg_Root_Archive; with Pkg_Root_Preparation;
 with MC_Atomic; with MC_Dirents; with MC_FS; with MC_Hex; with MC_Log; with MC_Log_Format;
 with MC_Posix; with MC_SHA256; with MC_Store; with MC_Text;
@@ -27,11 +28,23 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
                  M.Epoch, M.Fence, "stage:" & Phase, Status);
       if Status = OK then Time_Left (Deadline, Status); end if;
    end Gate;
-   procedure Check_Content (Store : in out MC_Store.Store; M : GM.Manifest; Deadline : Counter; Status : out Outcome) is
+   procedure Check_Content (Store : in out MC_Store.Store; M : GM.Manifest; Expected : Digest;
+      Phase : String; Deadline : Counter; Status : out Outcome) is
+      Root_ID : Identity; Native_Architecture : MC_Text.Value; Root_FD : Integer := -1;
    begin
       Time_Left (Deadline, Status);
       if Status = OK then GM.Check (Store, M, Status); end if;
       if Status = OK and then M.Format /= GM.Structural_V1 then GM.Check_Retention (Store, M, Deadline, Status); end if;
+      if Status = OK and then M.Format = GM.Configured_V6 then
+         Pkg_Generation_Intent.Read_Target_Scope (Store, M.Intent, M.Catalog, M.Catalog_Closure,
+            Deadline, Root_ID, Native_Architecture, Status);
+         if Status = OK then
+            Observe_Configuration (Expected, Root_ID, M.Transaction_ID, M.Intent, "stage:" & Phase, Root_FD, Status);
+         end if;
+         if Status = OK then
+            Pkg_Generation_Configuration.Check_Current (Store, M, Root_FD, Deadline, Status);
+         end if;
+      end if;
       if Status = OK then Time_Left (Deadline, Status); end if;
    end Check_Content;
    procedure Read_Binding (R : MC_FS.Root; Expected : Digest; M : out GM.Manifest; Status : out Outcome) is
@@ -63,7 +76,7 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       GM.Decode (Encoded_Manifest, M, Status); if Status /= OK then return; end if;
       Gate (M, Expected_Manifest, "provision", Deadline, Status); if Status /= OK then return; end if;
       MC_Store.Open (Store_Path, Store, Status);
-      if Status = OK then Check_Content (Store, M, Deadline, Status); end if;
+      if Status = OK then Check_Content (Store, M, Expected_Manifest, "provision", Deadline, Status); end if;
       if Status = OK then MC_FS.Open_Root (Root_Path, Root, Status, Private_Only => True); end if;
       if Status = OK then MC_FS.List_Names (Root, "", Names, Status); end if;
       if Status = OK and then Names.Count /= 0 then Status := Conflict; end if;
@@ -112,6 +125,12 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       end Batch_Gate;
       package Engine is new Pkg_File_Engine (Batch_Gate);
       C : Engine.Context;
+      procedure Validate_Inputs (Reserved : in out MC_Store.Store; Result : out Outcome) is
+      begin
+         MC_Store.Check_Pin (Reserved, M.Transaction_ID, Expected_Manifest, Result);
+         if Result = OK then Check_Content (Reserved, M, Expected_Manifest, "advance-inputs", Deadline, Result); end if;
+      end Validate_Inputs;
+      procedure Revalidate is new Engine.Check_Inputs (Validate_Inputs);
       type Buffer_Access is access Bytes;
       procedure Free_Buffer is new Ada.Unchecked_Deallocation (Bytes, Buffer_Access);
       Buffer : Buffer_Access := null;
@@ -130,9 +149,10 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       if Status = OK then MC_FS.Open_Root (Root_Path, Private_Root, Status, Private_Only => True); end if;
       if Status = OK then MC_Store.Open (Store_Path, Store, Status); end if;
       if Status = OK then MC_Store.Check_Pin (Store, M.Transaction_ID, Expected_Manifest, Status); end if;
-      if Status = OK then Check_Content (Store, M, Deadline, Status); end if;
+      if Status = OK then Check_Content (Store, M, Expected_Manifest, "advance", Deadline, Status); end if;
       MC_Store.Close (Store);
       if Status = OK then Engine.Open (Root_Path, State_Path, Store_Path, M.Stage_ID, C, Status); end if;
+      if Status = OK and then M.Format = GM.Configured_V6 then Revalidate (C, Status); end if;
       if Status /= OK then Done; return; end if;
       if Engine.Generation (C) > Counter (M.Count) then Status := Corrupt; Done; return; end if;
       Index := Natural (Engine.Generation (C));
@@ -169,6 +189,7 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
          if Status = OK then Pkg_File_Plan.Encode (P.all, Buffer.all, Used, Status); end if;
          MC_Store.Close (Store);
          if Status = OK then Engine.Open (Root_Path, State_Path, Store_Path, M.Stage_ID, C, Status); end if;
+      if Status = OK and then M.Format = GM.Configured_V6 then Revalidate (C, Status); end if;
          if Status = OK and then (Engine.Generation (C) /= Counter (Index - 1) or else Engine.Has_Active_Change (C))
          then Status := Conflict; end if;
          if Status = OK then Engine.Prepare (C, Buffer (1 .. Used), M.Batches (Index).Plan, Status); end if;
@@ -261,7 +282,7 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       then Status := Conflict; end if;
       if Status = OK then MC_Store.Open (Store_Path, Store, Status); end if;
       if Status = OK then MC_Store.Check_Pin (Store, M.Transaction_ID, Expected_Manifest, Status); end if;
-      if Status = OK then Check_Content (Store, M, Deadline, Status); end if;
+      if Status = OK then Check_Content (Store, M, Expected_Manifest, "inspect", Deadline, Status); end if;
       if Status = OK then MC_FS.List_Names (Root, "", Names, Status); end if;
       if Status = OK and then (Names.Count /= 3 or else MC_Dirents.Image (Names.Names (1)) /= ".mission"
         or else MC_Dirents.Image (Names.Names (2)) /= "catalog" or else MC_Dirents.Image (Names.Names (3)) /= "tree")
@@ -312,7 +333,9 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       C : Verified_Generation; Store : MC_Store.Store; M, After : GM.Manifest;
       Header : Bytes (1 .. Pkg_Root_Archive.Header_Size); Used : Natural;
       Source, Root_Wire : MC_FS.File; Info : MC_FS.Entry_Info;
-      Archive : Digest := Zero_Digest; Size, Entries : Counter := 0;
+      Archive, Root_Manifest : Digest := Zero_Digest;
+      Saved : Pkg_Configured_Root_Record.View; Bound : Pkg_Configured_Root_Record.Root_Binding;
+      Size, Entries : Counter := 0;
       Delivered : Boolean := False;
       procedure Done is
       begin
@@ -323,37 +346,45 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       Status := Invalid_Input; if Expected_Worker = Zero_Digest then return; end if;
       Verify_And_Hold (Root_Path, State_Path, Store_Path, Expected_Manifest, C, Deadline, Status);
       if Status = OK then Read_Binding (C.State, Expected_Manifest, M, Status); end if;
-      if Status = OK and then M.Format /= GM.Root_V5 then Status := Denied; end if;
+      if Status = OK and then M.Format not in GM.Root_V5 | GM.Configured_V6 then Status := Denied; end if;
       -- The verified stage/root remain reserved while CAS is reacquired. All
       -- retained inputs and admission are checked again under this reservation.
       if Status = OK then MC_Store.Open (Store_Path, Store, Status); end if;
       if Status = OK then MC_Store.Check_Pin (Store, M.Transaction_ID, Expected_Manifest, Status); end if;
-      if Status = OK then Check_Content (Store, M, Deadline, Status); end if;
+      if Status = OK then Check_Content (Store, M, Expected_Manifest, "prepare-root", Deadline, Status); end if;
       if Status = OK then Gate (M, Expected_Manifest, "prepare-root", Deadline, Status); end if;
-      if Status = OK then MC_Store.Open_Object (Store, M.Root_Archive, Root_Wire, Status); end if;
-      if Status = OK then MC_FS.Read_At (Root_Wire, 0, Header, Used, Status); end if;
-      if Status = OK and then Used /= Header'Length then Status := Corrupt; end if;
-      if Status = OK then
-         -- Check_Content already verified the complete canonical NIAROOT1/2,
-         -- ownership and exact enclosing catalog/closure. Read the same object.
-         Archive := Header (105 .. 136);
-         Size := Counter (MC_Codec.U64 (Header, 137)); Entries := Counter (MC_Codec.U64 (Header, 145));
-         MC_Store.Open_Object (Store, Archive, Source, Status);
+      if Status = OK and then M.Format = GM.Configured_V6 then
+         Pkg_Configured_Root_Record.Load (Store, M.Configured_Root, M.Configuration_Closure,
+            MC_Store.Max_Object_Size, Deadline, Saved, Status);
+         if Status = OK then
+            Bound := Pkg_Configured_Root_Record.Binding (Saved);
+            Root_Manifest := M.Configured_Root; Archive := Bound.Archive; Size := Bound.Size; Entries := Bound.Entries;
+         end if;
+      elsif Status = OK then
+         MC_Store.Open_Object (Store, M.Root_Archive, Root_Wire, Status);
+         if Status = OK then MC_FS.Read_At (Root_Wire, 0, Header, Used, Status); end if;
+         if Status = OK and then Used /= Header'Length then Status := Corrupt; end if;
+         if Status = OK then
+            -- Check_Content verified the canonical NIAROOT1/2 and ownership.
+            Root_Manifest := M.Root_Archive; Archive := Header (105 .. 136);
+            Size := Counter (MC_Codec.U64 (Header, 137)); Entries := Counter (MC_Codec.U64 (Header, 145));
+         end if;
       end if;
+      if Status = OK then MC_Store.Open_Object (Store, Archive, Source, Status); end if;
       if Status = OK then MC_FS.Info (Source, Info, Status); end if;
       if Status = OK and then (Info.Kind /= MC_FS.Regular or else Info.Size /= Size) then Status := Corrupt; end if;
       if Status = OK then
          Gate (M, Expected_Manifest, "prepare-root", Deadline, Status);
          if Status = OK then
             Delivered := True;
-            Pkg_Root_Preparation.Request (Socket_Path, Expected_Manifest, M.Root_Archive, Archive,
+            Pkg_Root_Preparation.Request (Socket_Path, Expected_Manifest, Root_Manifest, Archive,
                Expected_Worker, M.Stage_ID, Size, Entries, Deadline, MC_FS.Native (Source),
                MC_Store.Native_Reservation (Store), Status);
          end if;
       end if;
       if Status = OK then Read_Binding (C.State, Expected_Manifest, After, Status); end if;
       if Status = OK then MC_Store.Check_Pin (Store, M.Transaction_ID, Expected_Manifest, Status); end if;
-      if Status = OK then Check_Content (Store, After, Deadline, Status); end if;
+      if Status = OK then Check_Content (Store, After, Expected_Manifest, "root-prepared", Deadline, Status); end if;
       if Status = OK then Gate (After, Expected_Manifest, "root-prepared", Deadline, Status); end if;
       -- Even a post-response denial can leave a fully extracted private tree.
       if Delivered and then Status /= OK then Status := Indeterminate; end if;

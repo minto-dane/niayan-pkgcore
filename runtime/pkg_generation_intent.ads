@@ -17,6 +17,8 @@ package Pkg_Generation_Intent with SPARK_Mode => Off is
       Deadline : Counter; Status : out Outcome);
    procedure Read_Native_Architecture (Store : MC_Store.Store; Address, Catalog, Closure : Digest;
       Deadline : Counter; Native_Architecture : out MC_Text.Value; Status : out Outcome);
+   procedure Read_Target_Scope (Store : MC_Store.Store; Address, Catalog, Closure : Digest;
+      Deadline : Counter; Root_ID : out Identity; Native_Architecture : out MC_Text.Value; Status : out Outcome);
    -- Reads the retained, target-bound policy input. Not a hardware/site grant.
    function Update_Binding (Before, Catalog, Closure, Transition : Digest) return Digest;
    -- NIAGINT1 records the exact root/predecessor, target catalog/closure,

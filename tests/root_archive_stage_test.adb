@@ -2,6 +2,7 @@
 -- Artificial signatures and exact fixture authorization; never a site provider.
 with Ada.Command_Line; with Ada.Directories; with Ada.Text_IO; with Ada.Unchecked_Deallocation; with Interfaces.C; with System;
 with MC_Codec; with MC_FS; with MC_Hex; with MC_Posix; with MC_SHA256; with MC_Text;
+with Pkg_Configured_Root; with Pkg_Conffile_Choice; with Pkg_Conffile_Transition; with Pkg_Root_Configuration;
 with Pkg_Archive_Supply; with Pkg_Supply_Map; with Pkg_Supply_Policy;
 with Pkg_Deb_Final_Set; with Pkg_File_Plan; with Pkg_Generation_Descriptor;
 with Pkg_Generation_Intent; with Pkg_Generation_Manifest; with Pkg_Generation_Stage;
@@ -12,7 +13,10 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
    use type GM.Manifest; use type MC_FS.Entry_Kind;
    procedure Run (Store : in out MC_Store.Store; Store_Path : String;
       Catalog, Closure, Root_Manifest, Archive : Digest;
-      Packages : Pkg_Selected_Catalog.Selection; Deadline : Counter) is
+      Packages : Pkg_Selected_Catalog.Selection; Deadline : Counter;
+      Source_FD : Integer := -1; Prior, Incoming : Digest := Zero_Digest) is
+      Configured : constant Boolean := Source_FD >= 0;
+      Selected_Archive : Digest := Archive;
       Status : Outcome; Root_ID : constant Identity := (others => 84);
       M, Decoded : GM.Manifest;
       Expected, Receipt, Attrs, Ignored, Map : Digest; PK : Digest; SK : Bytes (1 .. 64);
@@ -24,6 +28,7 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
       type Plan_Access is access FP.Plan;
       procedure Free is new Ada.Unchecked_Deallocation (FP.Plan, Plan_Access);
       Plan : Plan_Access := new FP.Plan;
+      type Digest_Array is array (Positive range <>) of Digest;
       type Buffer_Access is access Bytes;
       procedure Free is new Ada.Unchecked_Deallocation (Bytes, Buffer_Access);
       Raw_Plan : Buffer_Access := new Bytes (1 .. FP.Max_Plan_Bytes);
@@ -33,7 +38,9 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
       Root_Path : constant String := Parent & "/archive-stage-root";
       State_Path : constant String := Parent & "/archive-stage-state";
       Deny, Deny_Prepare, Deny_Post : Boolean := False;
-      Prepare_Calls, Post_Calls : Natural := 0;
+      Prepare_Calls, Post_Calls, Source_Calls, Input_Calls : Natural := 0;
+      Foreign_Root : MC_Posix.FD := -1; Closed : Interfaces.C.int;
+      Deny_Source, Deny_Inputs, Missing_FD, Wrong_Source : Boolean := False;
       function Keypair (PK, SK, Seed : System.Address) return Interfaces.C.int
         with Import, Convention => C, External_Name => "crypto_sign_seed_keypair";
       function Sign (Signature, Length, Message : System.Address;
@@ -67,7 +74,23 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
          elsif Plan = M.Batches (1).Plan and then Transaction_ID = GM.Transaction (M, 1)
            and then Evidence in Zero_Digest | Receipt then Status := OK; end if;
       end Authorize;
-      package Stage is new Pkg_Generation_Stage (Authorize);
+      procedure Observe (Generation : Digest; Root_ID, Transaction_ID : Identity;
+         Context : Digest; Phase : String; Root_FD : out Integer; Status : out Outcome) is
+         Other : MC_Store.Store; Result : Outcome;
+      begin
+         Root_FD := -1; Status := Denied; Source_Calls := Source_Calls + 1;
+         if Phase = "stage:advance-inputs" then Input_Calls := Input_Calls + 1; end if;
+         if Deny_Source or else (Deny_Inputs and then Phase = "stage:advance-inputs") then return; end if;
+         if not Configured or else Generation /= Expected or else Root_ID /= Identity'(others => 84)
+           or else Transaction_ID /= M.Transaction_ID or else Context /= M.Intent
+           or else Phase not in "stage:provision" | "stage:advance" | "stage:advance-inputs" |
+             "stage:inspect" | "stage:prepare-root" | "stage:root-prepared" then return; end if;
+         MC_Store.Open (Store_Path, Other, Result);
+         Expect (Result /= OK, "source observation uses actual stage or engine CAS reservation"); MC_Store.Close (Other);
+         if not Missing_FD then Root_FD := (if Wrong_Source and then Phase = "stage:advance-inputs" then Integer (Foreign_Root) else Source_FD); end if; Status := OK;
+      end Observe;
+      package Stage is new Pkg_Generation_Stage (Authorize, Observe);
+      package Default_Stage is new Pkg_Generation_Stage (Authorize);
       function Object_Path (Hash : Digest) return String is
          Hex : constant String := MC_Hex.Encode (Hash);
       begin return "objects/" & Hex (1 .. 2) & "/" & Hex (3 .. 64); end Object_Path;
@@ -106,6 +129,23 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
       Pkg_Supply_Map.Prepare (Store, Target, Rows, Trust, 1_000, Deadline, Map, Until_Time, Status); Need ("root supply map");
       Pkg_Supply_Policy.Prepare (Store, Map, Target, Trust, 1_000, Deadline,
          M.Supply_Policy, Until_Time, Status); Need ("root supply policy");
+      if Configured then
+         declare Proposal : aliased Pkg_Conffile_Choice.Proposal; Decision, Kept : Digest;
+            Choices : Pkg_Root_Configuration.Choices (1 .. 1);
+         begin
+            M.Format := GM.Configured_V6;
+            Pkg_Conffile_Choice.Prepare (Store, Source_FD, Root_ID, M.Transaction_ID, M.Intent,
+               Pkg_Conffile_Choice.Update, "/etc/fixture.conf", Prior, Incoming, MC_Store.Max_Object_Size,
+               Deadline, Proposal, Status); Need ("generation-scoped current proposal");
+            Pkg_Conffile_Choice.Resolve (Store, Proposal, Pkg_Conffile_Choice.Address (Proposal),
+               Pkg_Conffile_Transition.Keep_Local, "/etc/fixture.conf.save", Deadline, Decision, Kept, Status);
+            Need ("generation-scoped retained choice");
+            Choices (1) := (Proposal'Unchecked_Access, Decision, Kept);
+            Pkg_Configured_Root.Build (Store, Root_Manifest, Catalog, Closure, Root_ID, M.Transaction_ID, M.Intent,
+               "amd64", Choices, MC_Store.Max_Object_Size, Deadline, M.Configured_Root, Selected_Archive,
+               M.Configuration_Closure, Status); Need ("complete configured generation output");
+         end;
+      end if;
       FP.Clear (Plan.all); Plan.Root_ID := M.Stage_ID; Plan.Transaction_ID := GM.Transaction (M, 1);
       Plan.Target_Generation := 1; Plan.Epoch := M.Epoch; Plan.Fence := M.Fence;
       Plan.Package_Set := Catalog; Plan.Effect_Contract := Receipt; Plan.Count := 3;
@@ -117,18 +157,35 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
       MC_Text.Set (Plan.Changes (2).Path, "tree", Status); Need ("tree path");
       Plan.Changes (2).After := (Node_Kind => FP.Directory, Mode => 8#755#, UID => Word (MC_Posix.Euid),
          GID => Word (MC_Posix.Egid), Xattrs => Attrs, others => <>);
-      MC_Store.Open_Object (Store, Archive, File, Status); Need ("assembled tar object");
+      MC_Store.Open_Object (Store, Selected_Archive, File, Status); Need ("assembled tar object");
       MC_FS.Info (File, Info, Status); Need ("assembled tar size"); MC_FS.Close (File);
       MC_Text.Set (Plan.Changes (3).Path, "tree/root.tar", Status); Need ("archive path");
-      Plan.Changes (3).After := Plan.Changes (1).After; Plan.Changes (3).After.Content := Archive;
+      Plan.Changes (3).After := Plan.Changes (1).After; Plan.Changes (3).After.Content := Selected_Archive;
       Plan.Changes (3).After.Size := Info.Size;
       FP.Encode (Plan.all, Raw_Plan.all, Count, Status); Need ("root stage plan");
       MC_Store.Put (Store, Raw_Plan (1 .. Count), M.Batches (1).Plan, Status); Need ("retain stage plan");
       M.Batches (1).Receipt := Receipt;
       GM.Encode (M, Wire, Used, Status); Need ("root manifest encode");
-      Expect (Used = 320 and then Wire (8) = 53 and then Wire (225 .. 256) = Root_Manifest, "v5 header exact");
-      GM.Decode (Wire (1 .. Used), Decoded, Status); Need ("root manifest decode"); Expect (Decoded = M, "v5 round trip");
-      for Tag in Byte range 49 .. 52 loop
+      Expect (Used = (if Configured then 384 else 320) and then Wire (8) = (if Configured then 54 else 53)
+         and then Wire (225 .. 256) = Root_Manifest, "versioned root header exact");
+      if Configured then
+         Expect (MC_Hex.Encode (GM.Transaction (M, 1)) = "e6998ebd60a56c5edfc5d06ce5178042", "v6 transaction independent SHA256 vector");
+         Expect (Wire (257 .. 288) = M.Configured_Root and then Wire (289 .. 320) = M.Configuration_Closure,
+            "v6 retains configured record and exact closure separately from base");
+         for Position in 0 .. 1 loop
+            Changed := Wire; Changed (257 + 32 * Position .. 288 + 32 * Position) := Zero_Digest;
+            GM.Decode (Changed (1 .. Used), Decoded, Status);
+            Expect (Status /= OK and then Decoded = GM.Manifest'(others => <>), "configured references mandatory");
+         end loop;
+         for Length in 257 .. 319 loop
+            GM.Decode (Wire (1 .. Length), Decoded, Status);
+            Expect (Status /= OK and then Decoded = GM.Manifest'(others => <>), "truncated configured header clears output");
+         end loop;
+         Decoded := M; Decoded.Format := GM.Root_V5;
+         Expect (not GM.Valid (Decoded), "v5 cannot silently carry configured fields");
+      end if;
+      GM.Decode (Wire (1 .. Used), Decoded, Status); Need ("root manifest decode"); Expect (Decoded = M, "root format round trip");
+      for Tag in Byte range 49 .. (if Configured then 53 else 52) loop
          Changed := Wire; Changed (8) := Tag; GM.Decode (Changed (1 .. Used), Decoded, Status);
          Expect (Status /= OK and then Decoded = GM.Manifest'(others => <>), "root profile cannot be relabeled");
       end loop;
@@ -146,28 +203,60 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
       MC_Store.Put (Store, Raw_Plan (1 .. Count), Ignored, Status); Need ("retain mismatched plan");
       Decoded := M; Decoded.Batches (1).Plan := Ignored;
       GM.Check_Retention (Store, Decoded, Deadline, Status); Expect (Status = Conflict, "manifest binds exact staged root tar");
+      if Configured then
+         Decoded := M; Decoded.Intent := Receipt;
+         GM.Check_Retention (Store, Decoded, Deadline, Status); Expect (Status /= OK, "configured intent cannot be substituted");
+      end if;
       MC_Store.Put (Store, Wire (1 .. Used), Expected, Status); Need ("retained v5 manifest");
       Ada.Text_IO.Put_Line ("GENERATION_MANIFEST " & MC_Hex.Encode (Expected));
       MC_Store.Close (Store);
       Ada.Directories.Create_Directory (Root_Path); Ada.Directories.Create_Directory (State_Path);
+      if Configured then
+         Default_Stage.Provision (Root_Path, State_Path, Store_Path, Wire (1 .. Used), Expected, Deadline, Status);
+         Expect (Status = Denied, "legacy instantiation refuses configured root without provider");
+         Deny_Source := True;
+         Stage.Provision (Root_Path, State_Path, Store_Path, Wire (1 .. Used), Expected, Deadline, Status);
+         Expect (Status = Denied, "configured provision requires independent source admission"); Deny_Source := False;
+         Missing_FD := True;
+         Stage.Provision (Root_Path, State_Path, Store_Path, Wire (1 .. Used), Expected, Deadline, Status);
+         Expect (Status = Denied, "successful source callback without FD cannot bypass current check"); Missing_FD := False;
+         Expect (not Ada.Directories.Exists (State_Path & "/generation.manifest"), "refused source creates no generation binding");
+      end if;
       Deny := True; Stage.Provision (Root_Path, State_Path, Store_Path, Wire (1 .. Used), Expected, Deadline, Status);
       Expect (Status = Denied, "root archive stage still needs independent authorization"); Deny := False;
-      Stage.Provision (Root_Path, State_Path, Store_Path, Wire (1 .. Used), Expected, Deadline, Status); Need ("provision v5 stage");
+      Stage.Provision (Root_Path, State_Path, Store_Path, Wire (1 .. Used), Expected, Deadline, Status); Need ("provision versioned root stage");
+      if Configured then
+         Deny_Inputs := True;
+         Stage.Advance (Root_Path, State_Path, Store_Path, Expected, Count, Deadline, Status);
+         Expect (Status = Denied and then Count = 0 and then Input_Calls = 1,
+            "inner engine reacquisition requires new source admission before mutation"); Deny_Inputs := False;
+         Expect (not Ada.Directories.Exists (Root_Path & "/catalog"), "refused inner source creates no staged catalog");
+         declare Name : aliased constant String := Root_Path & ASCII.NUL; begin
+            Foreign_Root := MC_Posix.Open (Name'Address, MC_Posix.O_PATH + MC_Posix.O_DIRECTORY + MC_Posix.O_NOFOLLOW + MC_Posix.O_CLOEXEC, 0);
+            Expect (Foreign_Root >= 0, "different source root fixture");
+         end;
+         Wrong_Source := True;
+         Stage.Advance (Root_Path, State_Path, Store_Path, Expected, Count, Deadline, Status);
+         Expect (Status /= OK and then Count = 0, "provider success with different physical source is not current evidence");
+         Wrong_Source := False; Closed := MC_Posix.Close (Foreign_Root); Foreign_Root := -1;
+         Expect (not Ada.Directories.Exists (Root_Path & "/catalog"), "different source caused no stage effect");
+      end if;
       Stage.Advance (Root_Path, State_Path, Store_Path, Expected, Count, Deadline, Status); Need ("materialize root archive stage");
       Expect (Count = 1, "one root archive batch");
+      if Configured then Expect (Input_Calls = 4, "both actual engine reservations reobserve configuration"); end if;
       Stage.Inspect (Root_Path, State_Path, Store_Path, Expected, Deadline, Status); Need ("inspect exact root stage");
       Deny_Prepare := True;
       Stage.Prepare_Root (Root_Path, State_Path, Store_Path, "/nonexistent-preparation.sock",
          Expected, Receipt, Deadline, Status);
       Expect (Status = Denied and then Prepare_Calls = 1 and then Post_Calls = 0, "preparation requires its own live authorization");
       Deny_Prepare := False;
-      if Ada.Command_Line.Argument_Count >= 4 then
+      if Ada.Command_Line.Argument_Count >= (if Configured then 5 else 4) then
          declare
-            Worker : Digest;
+            Worker : Digest; Shift : constant Natural := (if Configured then 1 else 0);
          begin
-            MC_Hex.Decode (Ada.Command_Line.Argument (4), Worker, Status); Need ("configured worker digest");
-            Deny_Post := Ada.Command_Line.Argument_Count >= 5 and then Ada.Command_Line.Argument (5) = "deny-post";
-            Stage.Prepare_Root (Root_Path, State_Path, Store_Path, Ada.Command_Line.Argument (3),
+            MC_Hex.Decode (Ada.Command_Line.Argument (4 + Shift), Worker, Status); Need ("configured worker digest");
+            Deny_Post := Ada.Command_Line.Argument_Count >= 5 + Shift and then Ada.Command_Line.Argument (5 + Shift) = "deny-post";
+            Stage.Prepare_Root (Root_Path, State_Path, Store_Path, Ada.Command_Line.Argument (3 + Shift),
                Expected, Worker, Deadline, Status);
             if Deny_Post then Expect (Status = Indeterminate, "post-extraction denial remains uncertain");
             else Need ("actual service extraction through stage admission"); end if;
@@ -177,7 +266,7 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
       MC_FS.Open_Root (Root_Path, Stage_Root, Status, Private_Only => True); Need ("observe staged root");
       MC_FS.Open_Read (Stage_Root, "tree/root.tar", File, Status); Need ("actual staged tar");
       MC_FS.Hash (File, MC_Store.Max_Object_Size, Ignored, Until_Time, Status); Need ("actual staged tar hash");
-      Expect (Ignored = Archive, "physical staged bytes equal assembled payload"); MC_FS.Close (File);
+      Expect (Ignored = Selected_Archive, "physical staged bytes equal assembled payload"); MC_FS.Close (File);
       MC_FS.Close (Stage_Root);
       MC_Store.Open (Store_Path, Store, Status); Need ("reopen root generation store");
       MC_Store.Check_Pin (Store, M.Transaction_ID, Expected, Status); Need ("existing generation pin binds root manifest");
@@ -190,7 +279,24 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
       MC_FS.Rename (CAS, "held-generation-root", Object_Path (Root_Manifest), True, Status); Need ("restore exact root manifest");
       MC_FS.Close (CAS);
       Stage.Inspect (Root_Path, State_Path, Store_Path, Expected, Deadline, Status); Need ("restored root generation inspection");
+      if Configured then
+         MC_FS.Open_Root (Store_Path, CAS, Status, Private_Only => True); Need ("configured retention fixture");
+         for Missing of Digest_Array'(M.Configured_Root, M.Configuration_Closure) loop
+            MC_FS.Rename (CAS, Object_Path (Missing), "held-configured-record", True, Status); Need ("hold configured record");
+            Stage.Inspect (Root_Path, State_Path, Store_Path, Expected, Deadline, Status);
+            Expect (Status /= OK, "stage refuses missing configured record or closure");
+            MC_FS.Stat (CAS, Object_Path (Missing), Info, Status); Need ("inspect missing configured record");
+            Expect (Info.Kind = MC_FS.Absent, "missing configured record is not reconstructed");
+            MC_FS.Rename (CAS, "held-configured-record", Object_Path (Missing), True, Status); Need ("restore configured record");
+         end loop;
+         MC_FS.Close (CAS);
+         Default_Stage.Inspect (Root_Path, State_Path, Store_Path, Expected, Deadline, Status);
+         Expect (Status = Denied, "legacy inspection cannot qualify configured stage");
+         Deny_Source := True; Stage.Inspect (Root_Path, State_Path, Store_Path, Expected, Deadline, Status);
+         Expect (Status = Denied, "completed stage still needs current source admission"); Deny_Source := False;
+         Ada.Text_IO.Put_Line ("CONFIGURED_STAGE_SOURCE_CALLS" & Natural'Image (Source_Calls));
+      end if;
       MC_Store.Open (Store_Path, Store, Status); Need ("restore caller reservation"); Free (Plan); Free (Raw_Plan);
-   exception when others => MC_FS.Close (File); MC_FS.Close (CAS); MC_FS.Close (Stage_Root); Free (Plan); Free (Raw_Plan); raise;
+   exception when others => Closed := MC_Posix.Close (Foreign_Root); MC_FS.Close (File); MC_FS.Close (CAS); MC_FS.Close (Stage_Root); Free (Plan); Free (Raw_Plan); raise;
    end Run;
 end Root_Archive_Stage_Test;
