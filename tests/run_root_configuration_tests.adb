@@ -7,6 +7,7 @@ with Pkg_Conffile_Choice; with Pkg_Conffile_Transition; with Pkg_Root_Configurat
 with Pkg_Root_Archive; with Pkg_Catalog_Store; with Pkg_Catalog_Retention;
 with Pkg_Selected_Catalog; with Pkg_Deb_Metadata; with Pkg_Deb_Payload; with Pkg_Payload_Index;
 with Test_Support; use Test_Support;
+with Configured_Root_Record_Test;
 procedure Run_Root_Configuration_Tests with SPARK_Mode => Off is
    package C renames Pkg_Conffile_Choice; package T renames Pkg_Conffile_Transition;
    package R renames Pkg_Root_Configuration; package A renames Pkg_Root_Archive;
@@ -15,7 +16,7 @@ procedure Run_Root_Configuration_Tests with SPARK_Mode => Off is
    use type Interfaces.C.int; use type Interfaces.C.long; use type C.Attribute_Source;
    Store : MC_Store.Store; Media : MC_FS.Root; File : MC_FS.File;
    Root : MC_Posix.FD := -1; Ignored : Interfaces.C.int; Status : Outcome; Deadline : Counter;
-   Proposal : R.Proposal_Access := new C.Proposal;
+   Proposal : R.Proposal_Access := null;
    procedure Free is new Ada.Unchecked_Deallocation (C.Proposal, R.Proposal_Access);
    Layout : R.Layout; Item : R.Entry_Reference; Retained : R.Choice_Binding;
    Selected : R.Choices (1 .. 1); Scope : C.Scope;
@@ -117,7 +118,11 @@ procedure Run_Root_Configuration_Tests with SPARK_Mode => Off is
       end if;
    end Serialize;
 begin
+   if Ada.Command_Line.Argument_Count = 5 and then Ada.Command_Line.Argument (2) = "--retained" then
+      Configured_Root_Record_Test.Run; return;
+   end if;
    Expect (Ada.Command_Line.Argument_Count = 3, "store root and media");
+   Proposal := new C.Proposal;
    MC_Runtime.Initialize (Status); Need ("runtime"); MC_Clock.Boottime_Milliseconds (Deadline, Status); Need ("clock"); Deadline := Deadline + 600_000;
    MC_Store.Initialize (Ada.Command_Line.Argument (1), Store, Status); Need ("CAS");
    MC_FS.Open_Root (Ada.Command_Line.Argument (3), Media, Status); Need ("media");

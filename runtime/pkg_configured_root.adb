@@ -4,6 +4,7 @@ with Interfaces.C;
 with MC_Clock; with MC_Codec; with MC_FS; with MC_Posix; with MC_SHA256;
 with Pkg_Configuration_Entry; with Pkg_Conffile_Choice; with Pkg_Deb_Payload;
 with Pkg_Payload_Index; with Pkg_Catalog_Store; with Pkg_Selected_Catalog; with Pkg_Tar_Framing;
+with Pkg_Catalog_Retention;
 package body Pkg_Configured_Root with SPARK_Mode => Off is
    package R renames Pkg_Root_Configuration; package C renames Pkg_Conffile_Choice;
    package P renames Pkg_Deb_Payload; package X renames Pkg_Payload_Index; package T renames Pkg_Tar_Framing;
@@ -316,32 +317,16 @@ package body Pkg_Configured_Root with SPARK_Mode => Off is
       Base_Manifest, Catalog, Catalog_Closure : Digest; Root_ID, Transaction : Identity;
       Context : Digest; Native_Architecture : String; Selected : R.Choices;
       Limit, Deadline : Counter; Archive : out Digest; Status : out Outcome) is
-      File, Member_File : MC_FS.File; Info, After : MC_FS.Entry_Info;
-      Check_Hash : MC_SHA256.Context := MC_SHA256.Initialize;
-      Header : Bytes (1 .. Retention_Header_Size); Member, Previous : Digest := Zero_Digest;
-      Got_Manifest, Got_Archive, Got_Retained : Digest; Used, Count : Natural;
+      Saved : Pkg_Configured_Root_Record.View;
+      Got_Manifest, Got_Archive, Got_Retained : Digest;
       Interrupted : exception;
       procedure Need is begin if Status /= OK then raise Interrupted; end if; end Need;
-      procedure Cleanup is begin MC_FS.Close (File); MC_FS.Close (Member_File); end Cleanup;
+      procedure Cleanup is begin Pkg_Configured_Root_Record.Clear (Saved); end Cleanup;
    begin
       Archive := Zero_Digest; Status := Denied; if MC_Posix.Euid = 0 then return; end if;
       Status := Invalid_Input; if Manifest = Zero_Digest or else Retained = Zero_Digest then return; end if;
       Tick (Deadline, Status); Need;
-      MC_Store.Open_Object (Store, Retained, File, Status); Need; MC_FS.Info (File, Info, Status); Need;
-      MC_FS.Read_At (File, 0, Header, Used, Status); Need; Status := Corrupt;
-      if Used /= Header'Length or else Header (1 .. 8) /= Retention_Magic or else Header (9 .. 40) /= Manifest
-         or else MC_Codec.U64 (Header, 41) not in 1 .. Wide (Max_Objects) then raise Interrupted; end if;
-      Count := Natural (MC_Codec.U64 (Header, 41));
-      if Info.Size /= Counter (Header'Length + 32 * Count) then raise Interrupted; end if;
-      MC_SHA256.Update (Check_Hash, Header);
-      for I in 1 .. Count loop
-         Tick (Deadline, Status); Need;
-         MC_FS.Read_At (File, Counter (Header'Length + 32 * (I - 1)), Member, Used, Status); Need;
-         if Used /= 32 or else Member <= Previous then Status := Corrupt; raise Interrupted; end if;
-         MC_Store.Open_Object (Store, Member, Member_File, Status); Need; MC_FS.Close (Member_File); Previous := Member; MC_SHA256.Update (Check_Hash, Member);
-      end loop;
-      MC_FS.Info (File, After, Status); Need;
-      if Info /= After or else MC_SHA256.Finish (Check_Hash) /= Retained then Status := Stale; raise Interrupted; end if;
+      Pkg_Configured_Root_Record.Load (Store, Manifest, Retained, Limit, Deadline, Saved, Status); Need;
       Cleanup;
       Build (Store, Base_Manifest, Catalog, Catalog_Closure, Root_ID, Transaction, Context, Native_Architecture,
          Selected, Limit, Deadline, Got_Manifest, Got_Archive, Got_Retained, Status); Need;

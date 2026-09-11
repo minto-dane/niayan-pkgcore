@@ -1,12 +1,11 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
 with MC_Store; with Pkg_Root_Configuration; with Pkg_Root_Archive;
-with Pkg_Catalog_Retention;
+with Pkg_Configured_Root_Record;
 package Pkg_Configured_Root with SPARK_Mode => Off is
-   Header_Size : constant := 320;
-   Retention_Header_Size : constant := 48;
-   Max_Objects : constant := Pkg_Catalog_Retention.Max_Objects +
-      40 * Pkg_Root_Configuration.Max_Choices + 8;
+   Header_Size : constant := Pkg_Configured_Root_Record.Header_Size;
+   Retention_Header_Size : constant := Pkg_Configured_Root_Record.Retention_Header_Size;
+   Max_Objects : constant := Pkg_Configured_Root_Record.Max_Objects;
    procedure Build (Store : in out MC_Store.Store; Base_Manifest, Catalog, Catalog_Closure : Digest;
       Root_ID, Transaction : Identity; Context : Digest; Native_Architecture : String;
       Selected : Pkg_Root_Configuration.Choices; Limit, Deadline : Counter;
@@ -28,7 +27,8 @@ package Pkg_Configured_Root with SPARK_Mode => Off is
    -- here. The same open Store reservation is required throughout.
    -- Verify checks retained objects before rebuilding/comparing, so valid saved
    -- references cannot be silently repaired from surviving sources. It requires
-   -- live proposals; this is not a durable recovery loader or GC authority.
+   -- live proposals. Pkg_Configured_Root_Record.Load provides read-only saved
+   -- reference inspection without a live proposal, never execution/GC authority.
    -- Failed calls clear outputs; unreferenced completed CAS blobs may remain.
    -- UID0, infinite deadlines and unsupported configuration effects are refused.
 end Pkg_Configured_Root;

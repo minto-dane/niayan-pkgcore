@@ -208,6 +208,7 @@ else
   exit 1
 fi
 python3 "$PWD/tests/check_configured_root.py" --native "$D/configured-root-native.log" --cas "$D/run_root_configuration_tests/store" --output "$D/configured-root-oracle"
+python3 "$PWD/tests/check_configured_root_record.py" --native "$D/configured-root-native.log" --cas "$D/run_root_configuration_tests/store" --driver "$PWD/build/test-bin/run_root_configuration_tests" --output "$D/configured-record-oracle"
 mkdir -p "$D/run_tar_output_tests"
 mkdir -p "$D/"run_tar_output_tests/store
 mkdir -p "$D/"run_tar_output_tests/export
