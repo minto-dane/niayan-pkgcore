@@ -7,6 +7,7 @@ with MC_FS;
 package Pkg_Tar_Framing with SPARK_Mode => Off is
    Max_Entries : constant := 131_072;
    Max_Extension : constant := 1_048_576;
+   Max_Key : constant := 17 + 3 * 255; -- LIBARCHIVE prefix plus percent-encoded xattr name.
    Max_Extension_Total : constant Counter := 64 * 1024 * 1024;
    type Timestamp is record
       Present : Boolean := False;

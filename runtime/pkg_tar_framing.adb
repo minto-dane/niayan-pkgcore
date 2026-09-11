@@ -113,8 +113,17 @@ package body Pkg_Tar_Framing with SPARK_Mode => Off is
             if P > Last then return False; end if;
             if B (P) = 45 then Negative := True; P := P + 1; end if;
             for I in P .. Last loop if B (I) = 46 then Dot := I; exit; end if; end loop;
-            if not Decimal (P, Dot - 1, 16#7FFF_FFFF_FFFF_FFFF#) then return False; end if;
-            for I in P .. Dot - 1 loop Sec := Sec * 10 + Interfaces.Integer_64 (B (I) - 48); end loop;
+            if P >= Dot then return False; end if;
+            -- Accumulate negatively to admit the full signed minimum without
+            -- an overflowing intermediate positive magnitude.
+            for I in P .. Dot - 1 loop
+               if B (I) not in 48 .. 57 then return False; end if;
+               declare D : constant Interfaces.Integer_64 := Interfaces.Integer_64 (B (I) - 48); begin
+                  if Sec < (Interfaces.Integer_64'First + D) / 10 then return False; end if;
+                  Sec := Sec * 10 - D;
+               end;
+            end loop;
+            if not Negative and then Sec = Interfaces.Integer_64'First then return False; end if;
             if Dot <= Last then
                if Dot = Last then return False; end if;
                for I in Dot + 1 .. Last loop
@@ -124,9 +133,11 @@ package body Pkg_Tar_Framing with SPARK_Mode => Off is
                for I in Last - Dot + 1 .. 9 loop Nsec := Nsec * 10; end loop;
             end if;
             if Negative then
-               Sec := -Sec;
-               if Nsec /= 0 then Sec := Sec - 1; Nsec := 1_000_000_000 - Nsec; end if;
-            end if;
+               if Nsec /= 0 then
+                  if Sec = Interfaces.Integer_64'First then return False; end if;
+                  Sec := Sec - 1; Nsec := 1_000_000_000 - Nsec;
+               end if;
+            else Sec := -Sec; end if;
             Value := (True, Sec, Nsec);
             return True;
          end Parse_Clock;
@@ -184,6 +195,44 @@ package body Pkg_Tar_Framing with SPARK_Mode => Off is
             end loop;
             return Owner and then Group and then Other and then (not Named or else Mask);
          end Valid_ACL;
+         function Encoded_Name (Key : String) return Boolean is
+            P : Positive := Key'First; Count : Natural := 0; Code : Natural;
+            function Digit (C : Character) return Natural is
+              (case C is when '0' .. '9' => Character'Pos (C) - 48,
+               when 'A' .. 'F' => Character'Pos (C) - 55,
+               when 'a' .. 'f' => Character'Pos (C) - 87, when others => 16);
+         begin
+            while P <= Key'Last loop
+               Code := Character'Pos (Key (P));
+               if Key (P) = '%' then
+                  if Key'Last - P < 2 or else Digit (Key (P + 1)) > 15 or else Digit (Key (P + 2)) > 15 then return False; end if;
+                  Code := Digit (Key (P + 1)) * 16 + Digit (Key (P + 2)); P := P + 2;
+               end if;
+               if Code = 0 or else Count = 255 then return False; end if;
+               Count := Count + 1; P := P + 1;
+            end loop;
+            return Count > 0;
+         end Encoded_Name;
+         function Base64_Value (First, Last : Natural) return Boolean is
+            Length : constant Natural := Last - First + 1; Raw_Length : Natural := Length;
+            Padding : Natural := 0;
+            function Code (C : Byte) return Natural is
+              (case C is when 65 .. 90 => Natural (C) - 65, when 97 .. 122 => Natural (C) - 71,
+               when 48 .. 57 => Natural (C) + 4, when 43 => 62, when 47 => 63, when others => 64);
+         begin
+            if Length > 87_384 then return False; end if;
+            while Raw_Length > 0 and then B (First + Raw_Length - 1) = 61 loop
+               Raw_Length := Raw_Length - 1; Padding := Padding + 1;
+               if Padding > 2 then return False; end if;
+            end loop;
+            if Raw_Length mod 4 = 1 or else (Raw_Length * 6) / 8 > 65_536 then return False; end if;
+            if Padding /= 0 and then (Length mod 4 /= 0 or else Raw_Length mod 4 = 0
+               or else Padding /= 4 - Raw_Length mod 4) then return False; end if;
+            for I in 0 .. Raw_Length - 1 loop if Code (B (First + I)) > 63 then return False; end if; end loop;
+            if Raw_Length mod 4 = 2 then return Code (B (First + Raw_Length - 1)) mod 16 = 0;
+            elsif Raw_Length mod 4 = 3 then return Code (B (First + Raw_Length - 1)) mod 4 = 0;
+            else return True; end if;
+         end Base64_Value;
       begin
          Status := Corrupt;
          while P <= B'Last loop
@@ -201,12 +250,14 @@ package body Pkg_Tar_Framing with SPARK_Mode => Off is
             while P < Boundary and then B (P) /= 61 loop
                if B (P) not in 33 .. 126 then return; end if; P := P + 1;
             end loop;
-            if P = Key_Start or else P = Boundary or else P - Key_Start > 512 then return; end if;
+            if P = Key_Start or else P = Boundary or else P - Key_Start > Max_Key then return; end if;
             Equal_At := P;
             declare Key : constant String := Text (Key_Start, Equal_At - 1); begin
                if Seen_Keys.Contains (Key) then Status := Unsupported; return; end if;
                Seen_Keys.Insert (Key);
-               if Key = "size" then
+               if Key = "hdrcharset" then
+                  if Text (Equal_At + 1, Boundary - 1) /= "BINARY" then Status := Unsupported; return; end if;
+               elsif Key = "size" then
                   if Equal_At + 1 = Boundary then Status := Unsupported; return; end if;
                   Value := 0;
                   for I in Equal_At + 1 .. Boundary - 1 loop
@@ -237,6 +288,10 @@ package body Pkg_Tar_Framing with SPARK_Mode => Off is
                      Names (Slot) := To_Unbounded_String (Text (Equal_At + 1, Boundary - 1));
                   end;
                elsif Key'Length > 13 and then Key (1 .. 13) = "SCHILY.xattr." then null;
+               elsif Key'Length > 17 and then Key (1 .. 17) = "LIBARCHIVE.xattr." then
+                  if not Encoded_Name (Key (18 .. Key'Last)) or else not Base64_Value (Equal_At + 1, Boundary - 1) then
+                     Status := Corrupt; return;
+                  end if;
                else Status := Unsupported; return;
                end if;
             end;
