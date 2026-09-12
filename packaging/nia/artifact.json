@@ -34,6 +34,11 @@
       "source": "build/bin/pkg_scrubctl",
       "destination": "usr/libexec/nia/pkg_scrubctl",
       "mode": "0755"
+    },
+    {
+      "source": "build/bin/pkg_operator_guard",
+      "destination": "usr/libexec/nia/pkg_operator_guard",
+      "mode": "0755"
     }
   ],
   "dependency_derivation": "ELF-interpreter-needed-SONAME-plus-reviewed-effect-contract",
