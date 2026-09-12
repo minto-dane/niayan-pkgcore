@@ -14,7 +14,7 @@ package Pkg_Root_Handoff with SPARK_Mode => Off is
    -- both ends BEFORE spawning the worker, then passes the private child FD.
    -- Open borrows that FD and pins the actual root peer with SO_PEERPIDFD.
    -- Prepare performs one attempt per Session and transfers borrowed archive
-   -- and native CAS OFDs. Use with Generation_Stage.Prepare_Root_Using so the
+   -- and native CAS OFDs. Use with Generation_Stage.Prepare_Root so the
    -- mandatory native checks and stage/root/CAS reservations surround it.
    -- The supervisor independently admits the exact 192-byte scope and checks
    -- current operator/supply/consent before its root session request and reply.

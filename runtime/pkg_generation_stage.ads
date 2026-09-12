@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 with MC_Types; use MC_Types;
-with MC_FS; with MC_Store; with Pkg_Root_Preparation; with Pkg_Generation_Configuration;
+with MC_FS; with MC_Store; with Pkg_Root_Identity; with Pkg_Generation_Configuration;
 generic
    with procedure Authorize
      (Manifest, Plan, Evidence : Digest; Stage_ID, Transaction_ID : Identity;
@@ -44,14 +44,24 @@ package Pkg_Generation_Stage with SPARK_Mode => Off is
    generic
       with procedure Observe_Root
         (Generation : Digest; Stage_ID : Identity; Phase : String;
-         Original_Deadline : out Counter; Root : out Pkg_Root_Preparation.Root_Identity;
+         Original_Deadline : out Counter; Root : out Pkg_Root_Identity.Root_Identity;
          Status : out Outcome);
+      with procedure Reinspect_Root
+        (Generation, Root_Manifest, Archive, Worker : Digest; Stage : Identity;
+         Size, Entries, Original_Deadline, Deadline : Counter;
+         Expected_Root : Pkg_Root_Identity.Root_Identity;
+         Archive_FD, Reservation_FD : Integer; Status : out Outcome);
    procedure Reinspect_Root_And_Hold
-     (Root_Path, State_Path, Store_Path, Socket_Path : String;
+     (Root_Path, State_Path, Store_Path : String;
       Expected_Manifest, Expected_Worker : Digest; C : in out Reinspected_Generation;
       Deadline : Counter; Status : out Outcome);
+   -- The transport borrows the actual archive/CAS FDs under all native gates.
+   -- Observe_Root remains a separate, mandatory independent observation before
+   -- and after the transport. No response may supply its own expected identity.
+   -- Both providers must retain physical exclusion until this handle is closed.
+   -- A provider error after invocation is Indeterminate; no fallback or retry.
    function Held (C : Reinspected_Generation) return Boolean;
-   function Root_Observation (C : Reinspected_Generation) return Pkg_Root_Preparation.Root_Identity;
+   function Root_Observation (C : Reinspected_Generation) return Pkg_Root_Identity.Root_Identity;
    procedure Close (C : in out Reinspected_Generation);
    -- A distinct observation handle holds generation/root/CAS reservations and
    -- the archive FD until Close, including after its deadline expires. Held
@@ -67,7 +77,7 @@ package Pkg_Generation_Stage with SPARK_Mode => Off is
         (Generation, Root_Manifest, Archive, Worker : Digest; Stage : Identity;
          Size, Entries, Deadline : Counter; Archive_FD, Reservation_FD : Integer;
          Status : out Outcome);
-   procedure Prepare_Root_Using
+   procedure Prepare_Root
      (Root_Path, State_Path, Store_Path : String;
       Expected_Manifest, Expected_Worker : Digest; Deadline : Counter; Status : out Outcome);
    -- Transport injection only: the same native admission/content checks and
@@ -76,9 +86,6 @@ package Pkg_Generation_Stage with SPARK_Mode => Off is
    -- them, reconnect/retry an uncertain operation, or treat them as admission.
    -- A supervisor transport owns its separate authenticated channel and keeps
    -- physical exclusion beyond this call. This SDK remains nonroot-only.
-   procedure Prepare_Root
-     (Root_Path, State_Path, Store_Path, Socket_Path : String;
-      Expected_Manifest, Expected_Worker : Digest; Deadline : Counter; Status : out Outcome);
    -- v5/v6. Hold stage/root/CAS reservations through the actual FD request and
    -- final content/admission rechecks. prepare-root/root-prepared authorization
    -- phases are mandatory; a service response alone never grants publication.
@@ -125,7 +132,7 @@ private
       Stage : Verified_Generation;
       Store : MC_Store.Store;
       Archive : MC_FS.File;
-      Physical : Pkg_Root_Preparation.Root_Identity;
+      Physical : Pkg_Root_Identity.Root_Identity;
       Deadline : Counter := 0;
       Verified : Boolean := False;
    end record;

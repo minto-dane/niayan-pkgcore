@@ -128,7 +128,7 @@ begin
       or else (Ada.Command_Line.Argument_Count = 6 and then Ada.Command_Line.Argument (2) = "--current") then
       Configured_Root_Record_Test.Run; return;
    end if;
-   Expect (Ada.Command_Line.Argument_Count in 3 | 5 | 6, "store root media and optional physical service");
+   Expect (Ada.Command_Line.Argument_Count = 3, "private CAS, root and vendor media");
    Proposal := new C.Proposal;
    MC_Runtime.Initialize (Status); Need ("runtime"); MC_Clock.Boottime_Milliseconds (Deadline, Status); Need ("clock"); Deadline := Deadline + 600_000;
    MC_Store.Initialize (Ada.Command_Line.Argument (1), Store, Status); Need ("CAS");

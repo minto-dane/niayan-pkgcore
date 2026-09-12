@@ -1,19 +1,19 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Finalization; with System;
 with MC_Types; use MC_Types;
-with Pkg_Root_Preparation;
+with Pkg_Root_Identity;
 package Pkg_Root_Session with SPARK_Mode => Off is
    type Session is new Ada.Finalization.Limited_Controlled with private;
    procedure Open
      (C : in out Session; Socket_Path, Boot_ID : String;
       Generation, Root_Manifest, Archive, Worker, Device_Plan : Digest;
       Stage : Identity; Size, Entries, Deadline : Counter;
-      Bank : Pkg_Root_Preparation.Root_Identity;
+      Bank : Pkg_Root_Identity.Root_Identity;
       Archive_FD, Reservation_FD : Integer; Status : out Outcome);
    procedure Observe
      (C : in out Session; Archive_FD, Reservation_FD : Integer; Status : out Outcome);
    function Held (C : Session) return Boolean;
-   function Observation (C : Session) return Pkg_Root_Preparation.Root_Identity;
+   function Observation (C : Session) return Pkg_Root_Identity.Root_Identity;
    procedure Close (C : in out Session; Status : out Outcome);
    overriding procedure Finalize (C : in out Session);
    -- Internal ROOT supervisor transport, distinct from the unprivileged stage
@@ -35,6 +35,6 @@ package Pkg_Root_Session with SPARK_Mode => Off is
 private
    type Session is new Ada.Finalization.Limited_Controlled with record
       Handle : System.Address := System.Null_Address;
-      Root : Pkg_Root_Preparation.Root_Identity;
+      Root : Pkg_Root_Identity.Root_Identity;
    end record;
 end Pkg_Root_Session;

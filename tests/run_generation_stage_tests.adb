@@ -4,7 +4,7 @@ with Ada.Command_Line; with Ada.Directories; with Interfaces.C;
 with MC_Clock; with MC_Atomic; with MC_FS; with MC_Hex; with MC_Posix; with MC_Runtime; with MC_Log_Format;
 with MC_SHA256; with MC_Store; with MC_Text;
 with MC_Types; use MC_Types;
-with Pkg_File_Plan; with Pkg_Generation_Manifest; with Pkg_Generation_Stage; with Pkg_Root_State;
+with Pkg_Root_Identity; with Pkg_File_Plan; with Pkg_Generation_Manifest; with Pkg_Generation_Stage; with Pkg_Root_State;
 with Test_Support; use Test_Support;
 procedure Run_Generation_Stage_Tests with SPARK_Mode => Off is
    package GM renames Pkg_Generation_Manifest;
@@ -47,6 +47,31 @@ procedure Run_Generation_Stage_Tests with SPARK_Mode => Off is
       end if;
    end Authorize;
    package Stage is new Pkg_Generation_Stage (Authorize);
+   procedure Refuse_Request (Generation, Root_Manifest, Archive, Worker : Digest; Stage_ID : Identity;
+      Size, Entries, Deadline : Counter; Archive_FD, Reservation_FD : Integer; Status : out Outcome) is
+      pragma Unreferenced (Generation, Root_Manifest, Archive, Worker, Stage_ID,
+         Size, Entries, Deadline, Archive_FD, Reservation_FD);
+   begin
+      Status := Denied; Expect (False, "root must be refused before transport");
+   end Refuse_Request;
+   procedure Prepare is new Stage.Prepare_Root (Refuse_Request);
+   procedure Refuse_Observation (Generation : Digest; Stage_ID : Identity; Phase : String;
+      Original_Deadline : out Counter; Root : out Pkg_Root_Identity.Root_Identity; Status : out Outcome) is
+      pragma Unreferenced (Generation, Stage_ID, Phase);
+   begin
+      Original_Deadline := 0; Root := (others => <>); Status := Denied;
+      Expect (False, "root must be refused before independent observation");
+   end Refuse_Observation;
+   procedure Refuse_Reinspection (Generation, Root_Manifest, Archive, Worker : Digest; Stage_ID : Identity;
+      Size, Entries, Original_Deadline, Deadline : Counter; Expected_Root : Pkg_Root_Identity.Root_Identity;
+      Archive_FD, Reservation_FD : Integer; Status : out Outcome) is
+      pragma Unreferenced (Generation, Root_Manifest, Archive, Worker, Stage_ID, Size, Entries,
+         Original_Deadline, Deadline, Expected_Root, Archive_FD, Reservation_FD);
+   begin
+      Status := Denied; Expect (False, "root must be refused before reinspection transport");
+   end Refuse_Reinspection;
+   procedure Reinspect is new Stage.Reinspect_Root_And_Hold (Refuse_Observation, Refuse_Reinspection);
+   Physical_Hold : Stage.Reinspected_Generation;
    Hold : Stage.Verified_Generation;
    procedure Need (Label_Text : String) is
    begin Expect (S = OK, Label_Text & Outcome'Image (S)); end Need;
@@ -200,10 +225,13 @@ begin
       Stage.Verify_And_Hold (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2),
          Ada.Command_Line.Argument (3), Manifest_Digest, Hold, Deadline, S);
       Expect (S = Denied and then not Stage.Held (Hold), "root held inspection refused");
-      Stage.Prepare_Root (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2),
-         Ada.Command_Line.Argument (3), "/nonexistent-preparation.sock", Manifest_Digest,
+      Prepare (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2),
+         Ada.Command_Line.Argument (3), Manifest_Digest,
          Manifest_Digest, Deadline, S);
       Expect (S = Denied, "root preparation adapter refused");
+      Reinspect (Ada.Command_Line.Argument (1), Ada.Command_Line.Argument (2),
+         Ada.Command_Line.Argument (3), Manifest_Digest, Manifest_Digest, Physical_Hold, Deadline, S);
+      Expect (S = Denied and then not Stage.Held (Physical_Hold), "root reinspection refused before either callback");
       Report; return;
    end if;
    Deny_All := True;

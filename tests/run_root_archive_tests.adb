@@ -47,13 +47,8 @@ begin
       A.Verify_Ownership (Store, Zero_Digest, Zero_Digest, Zero_Digest, "amd64", Limit, 0, Archive, Ownership, Status);
       Expect (Status = Denied and then Archive = Zero_Digest and then Ownership = Zero_Digest, "root ownership verify refused"); Report; return;
    end if;
-   if Ada.Command_Line.Argument_Count >= 5 and then
-     Ada.Command_Line.Argument (Ada.Command_Line.Argument_Count) = "existing-store"
-   then
-      MC_Store.Open (Ada.Command_Line.Argument (1), Store, Status);
-   else
-      MC_Store.Initialize (Ada.Command_Line.Argument (1), Store, Status);
-   end if;
+   Expect (Ada.Command_Line.Argument_Count = 2, "private CAS and vendor media");
+   MC_Store.Initialize (Ada.Command_Line.Argument (1), Store, Status);
    Need ("private CAS");
    MC_FS.Open_Root (Ada.Directories.Full_Name (Ada.Command_Line.Argument (2)), Media, Status); Need ("media");
    MC_FS.Open_Root (Ada.Command_Line.Argument (1), CAS_Root, Status, Private_Only => True); Need ("private fault root");

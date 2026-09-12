@@ -10,7 +10,7 @@ package body Pkg_Root_Session with SPARK_Mode => Off is
      (C : in out Session; Socket_Path, Boot_ID : String;
       Generation, Root_Manifest, Archive, Worker, Device_Plan : Digest;
       Stage : Identity; Size, Entries, Deadline : Counter;
-      Bank : Pkg_Root_Preparation.Root_Identity;
+      Bank : Pkg_Root_Identity.Root_Identity;
       Archive_FD, Reservation_FD : Integer; Status : out Outcome) is
       function Start (Handle : in out System.Address;
          Path, G, R, A, W, ID, P, B : System.Address;
@@ -62,7 +62,7 @@ package body Pkg_Root_Session with SPARK_Mode => Off is
    begin
       return Current (C.Handle) = 1;
    end Held;
-   function Observation (C : Session) return Pkg_Root_Preparation.Root_Identity is
+   function Observation (C : Session) return Pkg_Root_Identity.Root_Identity is
    begin
       if not Held (C) then return (Mount_ID => 0, Inode => 0, Device_Major => 0, Device_Minor => 0); end if;
       return C.Root;

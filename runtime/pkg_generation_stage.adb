@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Unchecked_Deallocation; with Interfaces.C; with System;
 with Pkg_Configured_Root_Record; with Pkg_Generation_Intent;
-with MC_Clock; with MC_Codec; with Pkg_Root_Archive; with Pkg_Root_Preparation;
+with MC_Clock; with MC_Codec; with Pkg_Root_Archive; with Pkg_Root_Identity;
 with MC_Atomic; with MC_Dirents; with MC_FS; with MC_Hex; with MC_Log; with MC_Log_Format;
 with MC_Posix; with MC_SHA256; with MC_Store; with MC_Text;
 with Pkg_File_Engine; with Pkg_File_Plan; with Pkg_File_Replay;
@@ -375,7 +375,7 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       MC_FS.Close (Root_Wire);
    exception when others => MC_FS.Close (Root_Wire); MC_FS.Close (Source); Status := Indeterminate;
    end Open_Prepared_Archive;
-   procedure Prepare_Root_Using
+   procedure Prepare_Root
      (Root_Path, State_Path, Store_Path : String;
       Expected_Manifest, Expected_Worker : Digest; Deadline : Counter; Status : out Outcome) is
       C : Verified_Generation; Store : MC_Store.Store; M, After : GM.Manifest;
@@ -419,21 +419,6 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       if Delivered and then Status /= OK then Status := Indeterminate; end if;
       Done;
    exception when others => Done; Status := Indeterminate;
-   end Prepare_Root_Using;
-   procedure Prepare_Root
-     (Root_Path, State_Path, Store_Path, Socket_Path : String;
-      Expected_Manifest, Expected_Worker : Digest; Deadline : Counter; Status : out Outcome) is
-      procedure Request_Root
-        (Generation, Root_Manifest, Archive, Worker : Digest; Stage : Identity;
-         Size, Entries, Deadline : Counter; Archive_FD, Reservation_FD : Integer;
-         Status : out Outcome) is
-      begin
-         Pkg_Root_Preparation.Request (Socket_Path, Generation, Root_Manifest, Archive,
-            Worker, Stage, Size, Entries, Deadline, Archive_FD, Reservation_FD, Status);
-      end Request_Root;
-      procedure Prepare is new Prepare_Root_Using (Request_Root);
-   begin
-      Prepare (Root_Path, State_Path, Store_Path, Expected_Manifest, Expected_Worker, Deadline, Status);
    end Prepare_Root;
    procedure Close (C : in out Reinspected_Generation) is
    begin
@@ -446,18 +431,18 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       if not C.Verified or else not Held (C.Stage) then return False; end if;
       Time_Left (C.Deadline, Status); return Status = OK;
    end Held;
-   function Root_Observation (C : Reinspected_Generation) return Pkg_Root_Preparation.Root_Identity is
+   function Root_Observation (C : Reinspected_Generation) return Pkg_Root_Identity.Root_Identity is
    begin
       if Held (C) then return C.Physical; else return (others => <>); end if;
    end Root_Observation;
    procedure Reinspect_Root_And_Hold
-     (Root_Path, State_Path, Store_Path, Socket_Path : String;
+     (Root_Path, State_Path, Store_Path : String;
       Expected_Manifest, Expected_Worker : Digest; C : in out Reinspected_Generation;
       Deadline : Counter; Status : out Outcome) is
-      use type Pkg_Root_Preparation.Root_Identity;
+      use type Pkg_Root_Identity.Root_Identity;
       M, After : GM.Manifest; Root_Manifest, Archive : Digest;
       Size, Entries, Original_Deadline, After_Deadline : Counter := 0;
-      Physical, After_Physical : Pkg_Root_Preparation.Root_Identity;
+      Physical, After_Physical : Pkg_Root_Identity.Root_Identity;
       Delivered : Boolean := False;
    begin
       -- Never silently release a caller's existing reservation to replace it.
@@ -482,7 +467,7 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       if Status = OK then Gate (M, Expected_Manifest, "reinspect-root", Deadline, Status); end if;
       if Status = OK then
          Delivered := True;
-         Pkg_Root_Preparation.Reinspect (Socket_Path, Expected_Manifest, Root_Manifest, Archive,
+         Reinspect_Root (Expected_Manifest, Root_Manifest, Archive,
             Expected_Worker, M.Stage_ID, Size, Entries, Original_Deadline, Deadline, Physical,
             MC_FS.Native (C.Archive), MC_Store.Native_Reservation (C.Store), Status);
       end if;

@@ -1,16 +1,16 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Environment_Variables; with Ada.Text_IO;
 with MC_Types; use MC_Types; with MC_Clock;
-with Pkg_Root_Session; with Pkg_Root_Preparation;
+with Pkg_Root_Session; with Pkg_Root_Identity;
 procedure Run_Root_Session_Tests is
-   use type Pkg_Root_Preparation.Root_Identity;
+   use type Pkg_Root_Identity.Root_Identity;
    C : Pkg_Root_Session.Session;
    S : Outcome;
    Deadline : Counter;
    Pin : constant Digest := (others => 16#22#);
    Stage : constant Identity := (others => 16#11#);
-   Bank : constant Pkg_Root_Preparation.Root_Identity := (Mount_ID => 69, Inode => 2, Device_Major => 8, Device_Minor => 1);
-   Empty : constant Pkg_Root_Preparation.Root_Identity := (Mount_ID => 0, Inode => 0, Device_Major => 0, Device_Minor => 0);
+   Bank : constant Pkg_Root_Identity.Root_Identity := (Mount_ID => 69, Inode => 2, Device_Major => 8, Device_Minor => 1);
+   Empty : constant Pkg_Root_Identity.Root_Identity := (Mount_ID => 0, Inode => 0, Device_Major => 0, Device_Minor => 0);
    procedure Start (Path : String; FD : Integer) is
    begin
       Pkg_Root_Session.Open (C, Path, "12345678-1234-1234-1234-123456789abc",
