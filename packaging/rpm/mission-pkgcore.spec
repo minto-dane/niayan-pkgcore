@@ -19,6 +19,7 @@ BuildRequires: libsodium-devel
 BuildRequires: libarchive-devel
 BuildRequires: libcurl-devel
 BuildRequires: libxml2-devel
+BuildRequires: systemd-devel
 
 %description
 Independent Mission Core pkgcore tools. Source-level contracts and qualification
