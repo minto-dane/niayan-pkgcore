@@ -5,7 +5,7 @@ Name: mission-pkgcore
 Version: 0.1.0
 Release: 0.20260906.unified%{?dist}
 Summary: Mission Core pkgcore independent tools and integration interfaces
-License: MIT
+License: BSD-3-Clause
 Source0: %{name}-%{version}.tar.gz
 ExclusiveArch: x86_64
 %if 0%{?suse_version}
@@ -44,8 +44,8 @@ install -p -m0755 build/bin/pkg_scrubctl %{buildroot}%{_libexecdir}/mission-core
 install -p -m0755 build/bin/pkg_recoveryctl %{buildroot}%{_libexecdir}/mission-core/pkgcore/pkg_recoveryctl
 
 %files
-%license LICENSE
-%doc README.md SECURITY.md docs/
+%license LICENSE LICENSES/MIT-legacy.txt
+%doc LICENSING.md README.md SECURITY.md docs/
 %{_libexecdir}/mission-core/pkgcore/
 
 # Deliberately no %post, %preun, service presets, daemon reload or state removal.
