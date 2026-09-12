@@ -375,8 +375,8 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       MC_FS.Close (Root_Wire);
    exception when others => MC_FS.Close (Root_Wire); MC_FS.Close (Source); Status := Indeterminate;
    end Open_Prepared_Archive;
-   procedure Prepare_Root
-     (Root_Path, State_Path, Store_Path, Socket_Path : String;
+   procedure Prepare_Root_Using
+     (Root_Path, State_Path, Store_Path : String;
       Expected_Manifest, Expected_Worker : Digest; Deadline : Counter; Status : out Outcome) is
       C : Verified_Generation; Store : MC_Store.Store; M, After : GM.Manifest;
       Source : MC_FS.File;
@@ -406,7 +406,7 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
          Gate (M, Expected_Manifest, "prepare-root", Deadline, Status);
          if Status = OK then
             Delivered := True;
-            Pkg_Root_Preparation.Request (Socket_Path, Expected_Manifest, Root_Manifest, Archive,
+            Request_Root (Expected_Manifest, Root_Manifest, Archive,
                Expected_Worker, M.Stage_ID, Size, Entries, Deadline, MC_FS.Native (Source),
                MC_Store.Native_Reservation (Store), Status);
          end if;
@@ -419,6 +419,21 @@ package body Pkg_Generation_Stage with SPARK_Mode => Off is
       if Delivered and then Status /= OK then Status := Indeterminate; end if;
       Done;
    exception when others => Done; Status := Indeterminate;
+   end Prepare_Root_Using;
+   procedure Prepare_Root
+     (Root_Path, State_Path, Store_Path, Socket_Path : String;
+      Expected_Manifest, Expected_Worker : Digest; Deadline : Counter; Status : out Outcome) is
+      procedure Request_Root
+        (Generation, Root_Manifest, Archive, Worker : Digest; Stage : Identity;
+         Size, Entries, Deadline : Counter; Archive_FD, Reservation_FD : Integer;
+         Status : out Outcome) is
+      begin
+         Pkg_Root_Preparation.Request (Socket_Path, Generation, Root_Manifest, Archive,
+            Worker, Stage, Size, Entries, Deadline, Archive_FD, Reservation_FD, Status);
+      end Request_Root;
+      procedure Prepare is new Prepare_Root_Using (Request_Root);
+   begin
+      Prepare (Root_Path, State_Path, Store_Path, Expected_Manifest, Expected_Worker, Deadline, Status);
    end Prepare_Root;
    procedure Close (C : in out Reinspected_Generation) is
    begin

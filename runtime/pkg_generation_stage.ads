@@ -62,6 +62,20 @@ package Pkg_Generation_Stage with SPARK_Mode => Off is
    -- The provider is borrowed: its owner releases it only after Close. Neither
    -- this SDK nor a read-only view alone establishes global quiescence. This
    -- type cannot be passed to logical publication or treated as boot authority.
+   generic
+      with procedure Request_Root
+        (Generation, Root_Manifest, Archive, Worker : Digest; Stage : Identity;
+         Size, Entries, Deadline : Counter; Archive_FD, Reservation_FD : Integer;
+         Status : out Outcome);
+   procedure Prepare_Root_Using
+     (Root_Path, State_Path, Store_Path : String;
+      Expected_Manifest, Expected_Worker : Digest; Deadline : Counter; Status : out Outcome);
+   -- Transport injection only: the same native admission/content checks and
+   -- stage/root/CAS reservations surround Request_Root. The provider borrows
+   -- the actual archive/CAS FDs for this call; it must never unlock or close
+   -- them, reconnect/retry an uncertain operation, or treat them as admission.
+   -- A supervisor transport owns its separate authenticated channel and keeps
+   -- physical exclusion beyond this call. This SDK remains nonroot-only.
    procedure Prepare_Root
      (Root_Path, State_Path, Store_Path, Socket_Path : String;
       Expected_Manifest, Expected_Worker : Digest; Deadline : Counter; Status : out Outcome);

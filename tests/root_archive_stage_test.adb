@@ -93,6 +93,45 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
       end Observe;
       package Stage is new Pkg_Generation_Stage (Authorize, Observe);
       package Default_Stage is new Pkg_Generation_Stage (Authorize);
+      Transport_Calls, Transport_Mode : Natural := 0;
+      procedure Transport (Generation, Root_Manifest, Archive, Worker : Digest; Stage_ID : Identity;
+         Size, Entries, Until_Time : Counter; Archive_FD, Reservation_FD : Integer; Result : out Outcome) is
+         Other : MC_Store.Store; R : MC_FS.Root; L : MC_FS.File; Check : Outcome;
+      begin
+         Transport_Calls := Transport_Calls + 1;
+         Expect (Generation = Expected and then Root_Manifest = (if Configured then M.Configured_Root else M.Root_Archive)
+            and then Archive = Selected_Archive and then Worker = Receipt and then Stage_ID = M.Stage_ID
+            and then Size > 0 and then Entries > 0 and then Until_Time = Deadline
+            and then Archive_FD >= 0 and then Reservation_FD >= 0, "transport receives exact native scope and real FDs");
+         MC_Store.Open (Store_Path, Other, Check); Expect (Check = Conflict, "transport retains CAS reservation"); MC_Store.Close (Other);
+         MC_FS.Open_Root (State_Path, R, Check); Expect (Check = OK, "transport stage directory");
+         MC_FS.Open_Locked (R, "generation.lock", L, Check, Create_If_Missing => False);
+         Expect (Check = Conflict, "transport retains stage reservation"); MC_FS.Close (L);
+         MC_FS.Open_Locked (R, "root.lock", L, Check, Create_If_Missing => False);
+         Expect (Check = Conflict, "transport retains root reservation"); MC_FS.Close (L); MC_FS.Close (R);
+         Result := (if Transport_Mode = 0 then Denied else OK);
+         if Transport_Mode = 2 then Deny_Post := True; end if;
+         if Transport_Mode = 3 then raise Constraint_Error with "private transport fault"; end if;
+      end Transport;
+      procedure Prepare_Using is new Stage.Prepare_Root_Using (Transport);
+      procedure Transport_Checks is
+         Other : MC_Store.Store;
+      begin
+         Deny_Prepare := True;
+         Prepare_Using (Root_Path, State_Path, Store_Path, Expected, Receipt, Deadline, Status);
+         Expect (Status = Denied and then Transport_Calls = 0, "denied native admission cannot invoke transport");
+         Deny_Prepare := False;
+         for Mode in 0 .. 3 loop
+            Transport_Mode := Mode;
+            Prepare_Using (Root_Path, State_Path, Store_Path, Expected, Receipt, Deadline, Status);
+            Expect (Status = (if Mode = 1 then OK else Indeterminate), "transport does not hide uncertain delivery or post denial");
+            Deny_Post := False;
+            MC_Store.Open (Store_Path, Other, Status); Need ("transport result releases native reservation"); MC_Store.Close (Other);
+         end loop;
+         Expect (Transport_Calls = 4, "one callback for each admitted operation");
+         Prepare_Calls := 0; Post_Calls := 0;
+      end Transport_Checks;
+
       procedure Physical_Observation (Generation : Digest; Stage_ID : Identity; Phase : String;
          Original_Deadline : out Counter; Root : out Pkg_Root_Preparation.Root_Identity; Result : out Outcome) is
          Input : Ada.Text_IO.File_Type;
@@ -315,6 +354,7 @@ package body Root_Archive_Stage_Test with SPARK_Mode => Off is
       Expect (Count = 1, "one root archive batch");
       if Configured then Expect (Input_Calls = 4, "both actual engine reservations reobserve configuration"); end if;
       Stage.Inspect (Root_Path, State_Path, Store_Path, Expected, Deadline, Status); Need ("inspect exact root stage");
+      Transport_Checks;
       Deny_Prepare := True;
       Stage.Prepare_Root (Root_Path, State_Path, Store_Path, "/nonexistent-preparation.sock",
          Expected, Receipt, Deadline, Status);
