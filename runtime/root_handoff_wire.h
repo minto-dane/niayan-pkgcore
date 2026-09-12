@@ -9,4 +9,7 @@
  * Acceptance is exactly the canonical 192-byte preparation scope, bound to
  * the supplied finite positive deadline. It is not an execution permit. */
 int nia_handoff_wire_valid(const uint8_t *packet, size_t length, uint64_t deadline);
+/* Reinspection is a distinct 224-byte scope, including the original extraction
+ * deadline and independently expected mount/inode/device identity. */
+int nia_handoff_reinspection_valid(const uint8_t *packet, size_t length, uint64_t deadline);
 #endif

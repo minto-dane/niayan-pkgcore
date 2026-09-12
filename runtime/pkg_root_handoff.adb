@@ -26,6 +26,24 @@ package body Pkg_Root_Handoff with SPARK_Mode => Off is
       Status := Result (Send (C.Handle, Wire'Address, Interfaces.C.int (Archive_FD), Interfaces.C.int (Reservation_FD)));
    exception when others => Close (C); Status := Indeterminate;
    end Prepare;
+   procedure Reinspect (C : in out Session; Generation, Root_Manifest, Archive, Worker : Digest;
+      Stage : Identity; Size, Entries, Original_Deadline, Deadline : Counter;
+      Expected_Root : Pkg_Root_Identity.Root_Identity;
+      Archive_FD, Reservation_FD : Integer; Status : out Outcome) is
+      function Send (Handle, Request : System.Address; Archive, Reservation : Interfaces.C.int) return Interfaces.C.int
+        with Import, Convention => C, External_Name => "nia_root_handoff_reinspect";
+      Wire : aliased Bytes (1 .. 224) := (others => 0);
+   begin
+      Wire (1 .. 8) := (78, 73, 65, 72, 82, 86, 48, 49);
+      Wire (9 .. 40) := Generation; Wire (41 .. 72) := Root_Manifest;
+      Wire (73 .. 104) := Archive; Wire (105 .. 136) := Worker; Wire (137 .. 152) := Stage;
+      MC_Codec.Put64 (Wire, 153, Wide (Size)); MC_Codec.Put64 (Wire, 161, Wide (Entries));
+      MC_Codec.Put64 (Wire, 169, Wide (Deadline)); MC_Codec.Put64 (Wire, 177, Wide (Original_Deadline));
+      MC_Codec.Put64 (Wire, 185, Expected_Root.Mount_ID); MC_Codec.Put64 (Wire, 193, Expected_Root.Inode);
+      MC_Codec.Put32 (Wire, 201, Expected_Root.Device_Major); MC_Codec.Put32 (Wire, 205, Expected_Root.Device_Minor);
+      Status := Result (Send (C.Handle, Wire'Address, Interfaces.C.int (Archive_FD), Interfaces.C.int (Reservation_FD)));
+   exception when others => Close (C); Status := Indeterminate;
+   end Reinspect;
    procedure Close (C : in out Session) is
       procedure Finish (Handle : in out System.Address)
         with Import, Convention => C, External_Name => "nia_root_handoff_close";

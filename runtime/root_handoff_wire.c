@@ -53,3 +53,33 @@ int nia_handoff_wire_valid(const uint8_t *packet, size_t length, uint64_t deadli
     return (size >= 1024) && (size <= UINT64_C(8589934592)) && (size % 512 == 0)
         && (entries >= 1) && (entries <= 524288);
 }
+
+int nia_handoff_reinspection_valid(const uint8_t *packet, size_t length, uint64_t deadline)
+{
+    static const uint8_t magic[8] = {'N', 'I', 'A', 'H', 'R', 'V', '0', '1'};
+    uint8_t common[192] = {0};
+    if ((packet == NULL) || (length != 224)) {
+        return 0;
+    }
+    for (size_t index = 0; index < 8; ++index) {
+        if (packet[index] != magic[index]) {
+            return 0;
+        }
+    }
+    for (size_t index = 208; index < 224; ++index) {
+        if (packet[index] != 0) {
+            return 0;
+        }
+    }
+    /* Reuse the exact shared scope bounds without giving this operation the
+     * preparation opcode on the actual channel. The local tail stays zero. */
+    for (size_t index = 0; index < 176; ++index) {
+        common[index] = packet[index];
+    }
+    common[4] = 'N';
+    common[5] = 'D';
+    const uint64_t original = read_u64(packet + 176);
+    return nia_handoff_wire_valid(common, sizeof(common), deadline)
+        && (original > 0) && (original <= INT64_MAX)
+        && (read_u64(packet + 184) != 0) && (read_u64(packet + 192) != 0);
+}

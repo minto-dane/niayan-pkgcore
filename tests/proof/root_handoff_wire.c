@@ -15,6 +15,8 @@ static uint64_t reference_integer(const uint8_t *p)
         | ((uint64_t)p[6] << 8) | (uint64_t)p[7];
 }
 
+static void proof_reinspection_wire(void);
+
 void proof_handoff_wire(void)
 {
     uint8_t packet[192];
@@ -47,6 +49,45 @@ void proof_handoff_wire(void)
         expected = expected && present;
     }
     const int observed = nia_handoff_wire_valid(null_input ? NULL : packet, length, deadline);
+    assert(observed == expected);
+    assert(observed == 0 || observed == 1);
+    proof_reinspection_wire();
+}
+
+static void proof_reinspection_wire(void)
+{
+    uint8_t packet[224];
+    size_t length;
+    uint64_t deadline;
+    _Bool null_input;
+    __CPROVER_havoc_object(packet);
+    __CPROVER_havoc_object(&length);
+    __CPROVER_havoc_object(&deadline);
+    __CPROVER_havoc_object(&null_input);
+    const uint64_t size = reference_integer(packet + 152);
+    const uint64_t entries = reference_integer(packet + 160);
+    const uint64_t original = reference_integer(packet + 176);
+    int expected = !null_input && length == 224 && deadline > 0 && deadline <= INT64_MAX
+        && packet[0] == 'N' && packet[1] == 'I' && packet[2] == 'A' && packet[3] == 'H'
+        && packet[4] == 'R' && packet[5] == 'V' && packet[6] == '0' && packet[7] == '1'
+        && reference_integer(packet + 168) == deadline
+        && size >= 1024 && size <= UINT64_C(8589934592) && (size & 511) == 0
+        && entries >= 1 && entries <= 524288 && original > 0 && original <= INT64_MAX
+        && reference_integer(packet + 184) != 0 && reference_integer(packet + 192) != 0;
+    for (size_t index = 208; index < 224; ++index) {
+        expected = expected && packet[index] == 0;
+    }
+    for (size_t block = 0; block < 5; ++block) {
+        int present = 0;
+        const size_t width = block == 4 ? 16 : 32;
+        for (size_t index = 0; index < 32; ++index) {
+            if (index < width) {
+                present = present || packet[8 + 32 * block + index] != 0;
+            }
+        }
+        expected = expected && present;
+    }
+    const int observed = nia_handoff_reinspection_valid(null_input ? NULL : packet, length, deadline);
     assert(observed == expected);
     assert(observed == 0 || observed == 1);
 }

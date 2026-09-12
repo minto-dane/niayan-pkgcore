@@ -15,7 +15,7 @@
 #define SO_PEERPIDFD 77
 #endif
 
-/* One prepare request on a root-launched worker's private channel. The root
+/* One preparation or reinspection request on a root-launched worker's private channel. The root
  * supervisor must independently admit the scope before acknowledging it.
  * 0 prepared, 1 denied, 2 uncertain, 3 expired, 4 already used/in use. */
 struct handoff {
@@ -83,22 +83,23 @@ fail:
     { void *temporary = s; nia_root_handoff_close(&temporary); }
     return clock_ms() >= deadline ? 3 : 1;
 }
-int nia_root_handoff_prepare(void *handle, const unsigned char *request, int archive, int reservation) {
+static int exchange(void *handle, const unsigned char *request, size_t length,
+                    const char *acknowledgment, int archive, int reservation) {
     struct handoff *s = handle;
     if (!owned(s)) return 1;
     if (s->used) return 4;
-    if (archive < 0 || reservation < 0 || !nia_handoff_wire_valid(request,192,s->deadline)) return 1;
+    if (archive < 0 || reservation < 0) return 1;
     if (wait_for(s,POLLOUT)) return clock_ms() >= s->deadline ? 3 : 1;
-    unsigned char expected[40]; memcpy(expected,"NIAHOK01",8);
-    crypto_hash_sha256(expected+8,request,192);
-    struct iovec vec = {.iov_base=(void *)request,.iov_len=192};
+    unsigned char expected[40]; memcpy(expected,acknowledgment,8);
+    crypto_hash_sha256(expected+8,request,length);
+    struct iovec vec = {.iov_base=(void *)request,.iov_len=length};
     union { struct cmsghdr alignment; unsigned char bytes[CMSG_SPACE(2*sizeof(int))]; } control = {0};
     struct msghdr message = {.msg_iov=&vec,.msg_iovlen=1,.msg_control=control.bytes,.msg_controllen=sizeof(control.bytes)};
     struct cmsghdr *c = CMSG_FIRSTHDR(&message);
     c->cmsg_level=SOL_SOCKET; c->cmsg_type=SCM_RIGHTS; c->cmsg_len=CMSG_LEN(2*sizeof(int));
     int descriptors[2]={archive,reservation}; memcpy(CMSG_DATA(c),descriptors,sizeof(descriptors));
     s->used=1;
-    if (sendmsg(s->socket,&message,MSG_DONTWAIT|MSG_NOSIGNAL)!=192 || wait_for(s,POLLIN)) return 2;
+    if (sendmsg(s->socket,&message,MSG_DONTWAIT|MSG_NOSIGNAL)!=(ssize_t)length || wait_for(s,POLLIN)) return 2;
     unsigned char reply[41]; vec.iov_base=reply; vec.iov_len=sizeof(reply);
     union { struct cmsghdr alignment; unsigned char bytes[CMSG_SPACE(sizeof(struct ucred))+CMSG_SPACE(16*sizeof(int))]; } received = {0};
     message=(struct msghdr){.msg_iov=&vec,.msg_iovlen=1,.msg_control=received.bytes,.msg_controllen=sizeof(received.bytes)};
@@ -120,4 +121,19 @@ int nia_root_handoff_prepare(void *handle, const unsigned char *request, int arc
     struct pollfd life={.fd=s->pidfd,.events=POLLIN};
     return !invalid && credentials==1 && count==40 && !memcmp(reply,expected,40) &&
         clock_ms()<s->deadline && poll(&life,1,0)==0 ? 0 : 2;
+}
+
+int nia_root_handoff_prepare(void *handle, const unsigned char *request, int archive, int reservation) {
+    struct handoff *s = handle;
+    if (!owned(s)) return 1;
+    if (s->used) return 4;
+    if (!nia_handoff_wire_valid(request,192,s->deadline)) return 1;
+    return exchange(handle,request,192,"NIAHOK01",archive,reservation);
+}
+int nia_root_handoff_reinspect(void *handle, const unsigned char *request, int archive, int reservation) {
+    struct handoff *s = handle;
+    if (!owned(s)) return 1;
+    if (s->used) return 4;
+    if (!nia_handoff_reinspection_valid(request,224,s->deadline)) return 1;
+    return exchange(handle,request,224,"NIAHRK01",archive,reservation);
 }

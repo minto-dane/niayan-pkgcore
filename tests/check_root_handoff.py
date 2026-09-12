@@ -26,13 +26,17 @@ def main():
     lib = ctypes.CDLL(str(library))
     lib.nia_root_handoff_open.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_int, ctypes.c_ulonglong]
     lib.nia_root_handoff_prepare.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+    lib.nia_root_handoff_reinspect.argtypes = lib.nia_root_handoff_prepare.argtypes
     lib.nia_root_handoff_close.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
     lib.nia_root_handoff_close.restype = None
     passed = []
     modes = ['normal', 'scope-mismatch', 'extra-request-fds', 'truncated-request-controls', 'descendant-sender',
              'bad-reply', 'trailing-reply', 'reply-fds', 'truncated-reply-controls', 'silent',
              'cancel-before-completion', 'forked-handle', 'no-passcred', 'ada']
-    for mode in modes:
+    for case in modes + ['reinspect-' + mode for mode in modes] + ['reinspect-root-mismatch', 'reinspect-original-mismatch', 'reinspect-prepare-reply']:
+        reinspection = case.startswith('reinspect-')
+        mode = case.removeprefix('reinspect-') if reinspection else case
+        send = lib.nia_root_handoff_reinspect if reinspection else lib.nia_root_handoff_prepare
         before = len(os.listdir('/proc/self/fd'))
         parent, child = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
         for peer in (parent, child):
@@ -41,6 +45,9 @@ def main():
             child.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 0)
         scope = module.Scope(*(bytes([0x22]) * 32 for _ in range(4)), bytes([0x11]) * 16,
                              1024, 1, module.now_ms() + (250 if mode == 'silent' else 5000))
+        if reinspection:
+            scope = module.ReinspectionScope(**dataclasses.asdict(scope), original_deadline=1234,
+                mount_id=17, inode=19, device_major=8, device_minor=1)
         wire = scope.wire()
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
@@ -61,6 +68,7 @@ def main():
                         env = {'PATH': '/usr/bin:/bin', 'LC_ALL': 'C.UTF-8', 'NIA_TEST_HANDOFF_FD': str(child.fileno()),
                                'NIA_TEST_HANDOFF_DEADLINE': str(scope.deadline), 'NIA_TEST_ARCHIVE_FD': str(archive),
                                'NIA_TEST_LEASE_FD': str(lease)}
+                        if reinspection: env['NIA_TEST_REINSPECT'] = '1'
                         os.execve(str(ada), [str(ada)], env)
                     baseline = len(os.listdir('/proc/self/fd'))
                     handle = ctypes.c_void_p()
@@ -73,7 +81,7 @@ def main():
                         if mode == 'forked-handle':
                             forked = os.fork()
                             if not forked:
-                                os._exit(0 if lib.nia_root_handoff_prepare(handle, wire, archive, lease) == 1 else 1)
+                                os._exit(0 if send(handle, wire, archive, lease) == 1 else 1)
                             assert os.waitpid(forked, 0)[1] == 0
                         if mode in ('extra-request-fds', 'truncated-request-controls', 'descendant-sender'):
                             forked = os.fork() if mode == 'descendant-sender' else 0
@@ -91,9 +99,9 @@ def main():
                             try: assert child.recv(128) == b''
                             except ConnectionResetError: pass
                         else:
-                            outcome = lib.nia_root_handoff_prepare(handle, wire, archive, lease)
+                            outcome = send(handle, wire, archive, lease)
                             assert outcome == (0 if mode in ('normal', 'forked-handle') else 2), (mode, outcome)
-                            assert lib.nia_root_handoff_prepare(handle, wire, archive, lease) == 4
+                            assert send(handle, wire, archive, lease) == 4
                         lib.nia_root_handoff_close(ctypes.byref(handle))
                         assert not handle.value
                     assert len(os.listdir('/proc/self/fd')) == baseline
@@ -107,6 +115,8 @@ def main():
             channel = None
             try:
                 expected = dataclasses.replace(scope, generation=bytes([0x33]) * 32) if mode == 'scope-mismatch' else scope
+                if mode == 'root-mismatch': expected = dataclasses.replace(scope, inode=20)
+                if mode == 'original-mismatch': expected = dataclasses.replace(scope, original_deadline=1235)
                 channel = module.Channel(parent, pid, 1000, expected)
                 os.write(ready_write, b'1'); os.close(ready_write); ready_write = -1
                 if mode == 'no-passcred':
@@ -115,7 +125,7 @@ def main():
                     channel.receive()
                     try: channel._wait(0)
                     except module.Rejected: pass
-                elif mode in ('scope-mismatch', 'extra-request-fds', 'truncated-request-controls', 'descendant-sender', 'cancel-before-completion'):
+                elif mode in ('root-mismatch', 'original-mismatch', 'scope-mismatch', 'extra-request-fds', 'truncated-request-controls', 'descendant-sender', 'cancel-before-completion'):
                     try:
                         channel.receive()
                         if mode == 'cancel-before-completion':
@@ -137,7 +147,8 @@ def main():
                         except module.Rejected: pass
                         else: raise AssertionError('duplicate completion')
                     else:
-                        reply = b'NIAHOK01' + hashlib.sha256(wire).digest()
+                        opcode = b'NIAHRK01' if reinspection and mode != 'prepare-reply' else b'NIAHOK01'
+                        reply = opcode + hashlib.sha256(wire).digest()
                         if mode == 'bad-reply': reply = b'X' + reply[1:]
                         if mode == 'trailing-reply': reply += b'X'
                         controls = []
@@ -145,7 +156,7 @@ def main():
                             controls = [(socket.SOL_SOCKET, socket.SCM_RIGHTS,
                                          array.array('i', [archive] * (40 if mode == 'truncated-reply-controls' else 1)))]
                         parent.sendmsg([reply], controls)
-                if mode in ('normal', 'forked-handle', 'ada', 'bad-reply', 'trailing-reply', 'reply-fds', 'truncated-reply-controls'):
+                if mode in ('prepare-reply', 'normal', 'forked-handle', 'ada', 'bad-reply', 'trailing-reply', 'reply-fds', 'truncated-reply-controls'):
                     # Retain the root endpoint while the C client checks the reply.
                     status = os.waitpid(pid, 0)[1]
                 else:
@@ -161,8 +172,8 @@ def main():
                     if pending == (0, 0): os.kill(pid, 9); os.waitpid(pid, 0)
                 except ChildProcessError: pass
         assert len(os.listdir('/proc/self/fd')) == before, (mode, 'supervisor FD leak')
-        passed.append(mode)
-        print('PASS', mode, flush=True)
+        passed.append(case)
+        print('PASS', case, flush=True)
     handle = ctypes.c_void_p()
     assert lib.nia_root_handoff_open(ctypes.byref(handle), 0, module.now_ms() + 1000) == 1
     passed.append('root-worker-refused')

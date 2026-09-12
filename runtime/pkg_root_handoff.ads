@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 with Ada.Finalization; with System;
+with Pkg_Root_Identity;
 with MC_Types; use MC_Types;
 package Pkg_Root_Handoff with SPARK_Mode => Off is
    type Session is new Ada.Finalization.Limited_Controlled with private;
@@ -7,13 +8,24 @@ package Pkg_Root_Handoff with SPARK_Mode => Off is
    procedure Prepare (C : in out Session; Generation, Root_Manifest, Archive, Worker : Digest;
       Stage : Identity; Size, Entries, Deadline : Counter;
       Archive_FD, Reservation_FD : Integer; Status : out Outcome);
+   procedure Reinspect (C : in out Session; Generation, Root_Manifest, Archive, Worker : Digest;
+      Stage : Identity; Size, Entries, Original_Deadline, Deadline : Counter;
+      Expected_Root : Pkg_Root_Identity.Root_Identity;
+      Archive_FD, Reservation_FD : Integer; Status : out Outcome);
+   -- One distinct reinspection exchange on its own private channel. The caller
+   -- supplies the original extraction deadline and independently observed root;
+   -- the supervisor binds both before accepting borrowed archive/CAS FDs.
+   -- It retains its existing physical controller session; no new preparation,
+   -- thaw, retry or renewal follows from this acknowledgment. Use only inside
+   -- Generation_Stage.Reinspect_Root_And_Hold with the mandatory independent
+   -- Observe_Root provider and full-lifetime supervisor exclusion.
    procedure Close (C : in out Session);
    overriding procedure Finalize (C : in out Session);
    -- Internal nonroot worker channel; not a public socket or execution permit.
    -- The root launcher creates a seqpacket pair with SO_PASSCRED enabled on
    -- both ends BEFORE spawning the worker, then passes the private child FD.
    -- Open borrows that FD and pins the actual root peer with SO_PEERPIDFD.
-   -- Prepare performs one attempt per Session and transfers borrowed archive
+   -- Prepare performs one attempt (Prepare OR Reinspect) per Session and transfers borrowed archive
    -- and native CAS OFDs. Use with Generation_Stage.Prepare_Root so the
    -- mandatory native checks and stage/root/CAS reservations surround it.
    -- The supervisor independently admits the exact 192-byte scope and checks
