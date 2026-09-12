@@ -8,28 +8,45 @@ procedure Pkg_Supply_Observe with SPARK_Mode => Off is
    use Ada.Command_Line; use Ada.Text_IO;
    Context : Pkg_Site_Supply.Session; Value : Pkg_Supply_Policy.Snapshot;
    Root_ID, Transaction_ID : Identity;
-   Plan, Policy, Map : Digest; Deadline : Counter; Status : Outcome := Invalid_Input;
+   Plan, Policy, Map : Digest := Zero_Digest;
+   Deadline : Counter; Status : Outcome := Invalid_Input;
+   Planning : constant Boolean := Argument_Count = 5 and then Argument (1) = "--planning";
+   Offset : constant Natural := (if Planning then 1 else 0);
 begin
-   if Argument_Count /= 7 then Set_Exit_Status (64); return; end if;
+   if not Planning and then Argument_Count /= 7 then Set_Exit_Status (64); return; end if;
    MC_Runtime.Initialize (Status);
-   if Status = OK then MC_Hex.Decode (Argument (3), Root_ID, Status); end if;
-   if Status = OK then MC_Hex.Decode (Argument (4), Transaction_ID, Status); end if;
-   if Status = OK then MC_Hex.Decode (Argument (5), Plan, Status); end if;
-   if Status = OK then MC_Hex.Decode (Argument (6), Policy, Status); end if;
-   if Status = OK then MC_Hex.Decode (Argument (7), Map, Status); end if;
+   if Status = OK then MC_Hex.Decode (Argument (3 + Offset), Root_ID, Status); end if;
+   if Status = OK then MC_Hex.Decode (Argument (4 + Offset), Transaction_ID, Status); end if;
+   if not Planning then
+      if Status = OK then MC_Hex.Decode (Argument (5), Plan, Status); end if;
+      if Status = OK then MC_Hex.Decode (Argument (6), Policy, Status); end if;
+      if Status = OK then MC_Hex.Decode (Argument (7), Map, Status); end if;
+   end if;
    if Status = OK then MC_Clock.Boottime_Milliseconds (Deadline, Status); end if;
    if Status = OK then
       if Deadline >= Counter'Last - 5_000 then Status := Exhausted;
       else Deadline := Deadline + 5_000; end if;
    end if;
    if Status = OK then
-      Pkg_Site_Supply.Open (Argument (1), Argument (2), Root_ID, Transaction_ID,
-         Plan, Policy, Map, Deadline, Context, Status);
+      if Planning then
+         Pkg_Site_Supply.Open_Planning (Argument (2), Argument (3), Root_ID, Transaction_ID,
+            Deadline, Context, Status);
+      else
+         Pkg_Site_Supply.Open (Argument (1), Argument (2), Root_ID, Transaction_ID,
+            Plan, Policy, Map, Deadline, Context, Status);
+      end if;
    end if;
-   if Status = OK then Pkg_Site_Supply.Observe (Context, Root_ID, Transaction_ID, Plan, Policy, Value, Status); end if;
+   if Status = OK then
+      if Planning then
+         Pkg_Site_Supply.Observe_Planning (Context, Root_ID, Transaction_ID, Value, Status);
+      else
+         Pkg_Site_Supply.Observe (Context, Root_ID, Transaction_ID, Plan, Policy, Value, Status);
+      end if;
+   end if;
    Pkg_Site_Supply.Close (Context);
    Put_Line ("format=nia-site-supply-1"); Put_Line ("status=" & Outcome'Image (Status));
    if Status = OK then
+      if Planning then Put_Line ("planning=true"); end if;
       Put_Line ("map=" & MC_Hex.Encode (Value.Map));
       Put_Line ("observed_at=" & Counter'Image (Value.Observed_At));
       Put_Line ("authorities=" & Natural'Image (Value.Count));
