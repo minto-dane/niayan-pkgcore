@@ -30,3 +30,9 @@ The internal `pkg_store_bootstrap` installer executable calls the canonical `MC_
 The independent site supply provider reads root-owned `supply.bin` and a separately protected `supply.floor`, rechecks their exact binding and samples current UTC on each publisher callback. It does not acquire the CAS reservation or grant execution. The internal `pkg_supply_observe` deployment probe is read-only. Site policy, rollback-resistant floor storage, a correct clock and the other managed authorization providers remain required; no production key or permissive default is shipped.
 
 Configured v6 publication verifies the current independently reserved configuration source during stage inspection and again under the publication engine's CAS reservation. In-flight admission cannot waive that check. Only an exact already-accepted state and journal may use the distinct retained-stage evidence type for terminal metadata reconciliation; physical stage bytes, pins, receipts and current managed authorization remain mandatory. This selects a retained archive and does not qualify an extracted filesystem or boot switch. `tests/check_configured_publication.py` exercises the real conffile fixture, source changes, fresh-process recovery and missing retained evidence.
+
+The private `pkg_supply_guard` retains a site supply session for ordered bounded
+observations during root supervision. It checks the planner's exact policy/floor
+hashes and UTC high water mark without reacquiring the store reservation. It
+does not authorize the bound generation or replace managed publisher checks.
+This integration is uncompiled and untested pending pre-release validation.

@@ -39,6 +39,12 @@ package Pkg_Site_Supply with SPARK_Mode => Off is
    procedure Observe (Context : in out Session; Root_ID, Transaction_ID : Identity;
       Plan, Retained_Policy : Digest; Value : out Pkg_Supply_Policy.Snapshot; Status : out Outcome);
    procedure Close (Context : in out Session);
+   procedure Observe_Inputs (Context : in out Session;
+      Policy_Hash, Floor_Hash : out Digest; Observed_At : out Counter; Status : out Outcome);
+   -- Freshly authenticate the same session inputs and export their identities
+   -- for a separately supervised observer. A planner must retain these values
+   -- with its admission context, not obtain replacements after plan consent.
+   -- This observation does not validate a retained map or grant execution.
    generic
       Context : in out Session;
    procedure Observe_Current (Root_ID, Transaction_ID : Identity; Plan, Retained_Policy : Digest;

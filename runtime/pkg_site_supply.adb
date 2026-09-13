@@ -137,6 +137,21 @@ package body Pkg_Site_Supply with SPARK_Mode => Off is
       MC_FS.Close (Directory); MC_FS.Close (Floors); Close (Context);
       Value := (others => <>); Status := Indeterminate;
    end Read_Current;
+   procedure Observe_Inputs (Context : in out Session;
+      Policy_Hash, Floor_Hash : out Digest; Observed_At : out Counter; Status : out Outcome) is
+      Value : Pkg_Supply_Policy.Snapshot;
+      Root_ID : constant Identity := Context.Data.Root_ID;
+      Transaction_ID : constant Identity := Context.Data.Transaction_ID;
+      Plan : constant Digest := Context.Data.Plan;
+      Retained_Policy : constant Digest := Context.Data.Retained_Policy;
+   begin
+      Policy_Hash := Zero_Digest; Floor_Hash := Zero_Digest; Observed_At := 0;
+      Read_Current (Context, Root_ID, Transaction_ID, Plan, Retained_Policy, Value, Status);
+      if Status = OK then
+         Policy_Hash := Context.Data.Policy_Hash; Floor_Hash := Context.Data.Floor_Hash;
+         Observed_At := Value.Observed_At;
+      end if;
+   end Observe_Inputs;
    procedure Observe (Context : in out Session; Root_ID, Transaction_ID : Identity;
       Plan, Retained_Policy : Digest; Value : out Pkg_Supply_Policy.Snapshot; Status : out Outcome) is
    begin
