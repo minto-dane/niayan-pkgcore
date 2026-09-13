@@ -46,7 +46,9 @@ begin
    Inv(2).EVR:=(others=>99); Expect(not Pkg_Incorporation.Satisfied(I,Inv,2),"incorporation-rejects-substitution");
 
    A.ID:=(others=>1); A.Package_ID:=(others=>2); A.Fixed_Build:=(others=>3); A.Metadata:=(others=>4); A.Published_At:=100; A.Security_Epoch:=5;
-   A.Level:=Pkg_Advisory.Critical; A.Exploited:=True;
+   A.Reporting_Authority := (others => 7); A.Exploitation_Report_Record := (others => 8);
+   A.Exploitation_Report_Published_At := 1; A.Exploitation_Report_Authenticated := True;
+   A.Level:=Pkg_Advisory.Critical; A.Authority_Reports_Wild_Exploitation:=True;
    Expect(Pkg_Advisory.Decide(A,(others=>9),5)=Pkg_Advisory.Emergency_Change,"exploited-critical-expedites");
    A.Known_Bad:=True; Expect(Pkg_Advisory.Decide(A,(others=>9),5)=Pkg_Advisory.Block_Installation,"known-bad-blocked");
 
@@ -61,7 +63,7 @@ begin
    Expect(Pkg_Activation.Evaluate(F)=Pkg_Activation.Partially_Active,"running-state-not-confused-with-installed-state");
    F.Services_Pending:=0; Expect(Pkg_Activation.Evaluate(F)=Pkg_Activation.Active,"activation-after-required-restart");
 
-   A.Known_Bad:=False; A.Exploited:=True; XP.Exploited_Max_Ms:=100; XP.Critical_Max_Ms:=1_000;
+   A.Known_Bad:=False; A.Authority_Reports_Wild_Exploitation:=True; XP.Reported_Wild_Exploitation_Max_Ms:=100; XP.Critical_Max_Ms:=1_000;
    XF.Advisory:=A; XF.Now:=250; XF.First_Observed_At:=100; XF.Fixed_Build_Available:=True; XF.Recovery_Pinned:=True;
    Expect(Pkg_Exposure_Policy.Evaluate(XP,XF)=Pkg_Exposure_Policy.Overdue,"exploited-fix-window-is-bounded");
 

@@ -3,7 +3,7 @@ with MC_Types; use MC_Types; with Pkg_Advisory;
 package Pkg_Exposure_Policy with SPARK_Mode, Pure is
    type Policy is record
       Critical_Max_Ms, Important_Max_Ms, Moderate_Max_Ms, Low_Max_Ms : Counter := 0;
-      Exploited_Max_Ms : Counter := 0;
+      Reported_Wild_Exploitation_Max_Ms : Counter := 0;
       Require_Fixed_Build, Require_Recovery_Pin : Boolean := True;
    end record;
    type Facts is record

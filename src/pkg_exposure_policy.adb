@@ -7,7 +7,7 @@ package body Pkg_Exposure_Policy with SPARK_Mode is
         or else F.Advisory.Withdrawn or else F.Advisory.Known_Bad then return Blocked; end if;
       if P.Require_Fixed_Build and then not F.Fixed_Build_Available then return No_Fix_Available; end if;
       if P.Require_Recovery_Pin and then not F.Recovery_Pinned then return Blocked; end if;
-      if F.Advisory.Exploited then Limit:=P.Exploited_Max_Ms;
+      if F.Advisory.Authority_Reports_Wild_Exploitation then Limit:=P.Reported_Wild_Exploitation_Max_Ms;
       else case F.Advisory.Level is
          when Pkg_Advisory.Critical => Limit:=P.Critical_Max_Ms;
          when Pkg_Advisory.Important => Limit:=P.Important_Max_Ms;
