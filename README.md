@@ -36,3 +36,11 @@ observations during root supervision. It checks the planner's exact policy/floor
 hashes and UTC high water mark without reacquiring the store reservation. It
 does not authorize the bound generation or replace managed publisher checks.
 This integration is uncompiled and untested pending pre-release validation.
+
+`Pkg_Generation_Reader` now owns consistent accepted-state reads without
+instantiating a write-authority engine; publisher reads use the same code.
+`Pkg_Update_Planner` prepares native transition intent and authenticated supply
+against that actual predecessor under publication/root/store reservations.
+`pkg_catalog_query` provides a bounded private catalog response for adopted
+listing commands. These changes remain uncompiled and unqualified; a query or
+prepared intent is not managed execution or boot authority.
